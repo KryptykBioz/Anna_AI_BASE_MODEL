@@ -1,0 +1,96 @@
+{
+  "ollama": {
+    "endpoint": "http://localhost:11434",
+    "temperature": 0.85,
+    "max_tokens": 1000,
+    "num_predict": 1000,
+    "num_ctx": 3000,
+    "top_p": 0.92,
+    "top_k": 60,
+    "repeat_penalty": 1.25,
+    "timeout": 600,
+    "seed": null
+  },
+  "models": {
+    "thought_model": "llama3.1:8b-instruct-q4_K_M",
+    "response_model": "llama3.1:8b-instruct-q4_K_M",
+    "vision_model": "gemma3:12b-it-q4_K_M",
+    "embed_model": "nomic-embed-text",
+    "tool_model": "llama3.1:8b-instruct-q4_K_M"
+  },
+  "bot": {
+    "name": "Anna",
+    "username": "Master",
+    "max_context_entries": 25,
+    "recent_convo_limit": 25
+  },
+  "memory": {
+    "max_context_entries": 25,
+    "embedding_search_results": 1,
+    "base_memory_search_results": 1,
+    "auto_summarize_threshold": 50,
+    "include_base_memory": false
+  },
+  "logging": {
+    "log_tool_execution": true,
+    "log_prompt_construction": true,
+    "log_response_processing": true,
+    "log_system_information": true,
+    "show_chat": true
+  },
+  "warudo": {
+    "websocket_url": "ws://127.0.0.1:19190",
+    "enabled": true,
+    "auto_connect": false,
+    "connection_timeout": 2.0
+  },
+  "chat_engagement": {
+    "enabled": false,
+    "autonomous": true,
+    "check_interval": 30,
+    "max_unengaged_messages": 5,
+    "engagement_cooldown": 60
+  },
+  "youtube": {
+    "enabled": true,
+    "video_id": "",
+    "auto_start": false,
+    "max_messages": 10
+  },
+  "twitch": {
+    "enabled": true,
+    "channel": "",
+    "auto_start": false,
+    "max_messages": 10,
+    "oauth_token": "",
+    "nickname": ""
+  },
+  "discord": {
+    "enabled": true,
+    "bot_token": "",
+    "command_prefix": "!",
+    "auto_start": false,
+    "allowed_channels": [
+
+    ],
+    "allowed_guilds": [
+
+    ],
+    "respond_to_mentions": true,
+    "respond_to_replies": true,
+    "respond_to_dms": true,
+    "respond_in_threads": true,
+    "typing_indicator": true,
+    "message_history_limit": 10,
+    "max_message_length": 2000,
+    "split_long_messages": true,
+    "command_cooldown": 3
+  },
+  "features": {
+    "use_search": false,
+    "use_vision": false,
+    "use_warudo": true,
+    "use_sound_effects": true,
+    "sound_effects_directory": "./BASE/tools/sounds/effects"
+  }
+}

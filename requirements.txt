@@ -1,0 +1,95 @@
+# ============================================================================
+# MINIMAL REQUIREMENTS FOR ANNA AI AGENT
+# ============================================================================
+#
+# Other install requirements for this agentic framework (Ollama, Python, etc.) may
+# be found in the README.md, INSTALL_README.md, or SETUP_README.md
+#
+# ============================================================================
+# PREREQUISITES (For newer GPUs, TTS package support, otherwise may run on CPU):
+# ============================================================================
+# 1. Python 3.11
+# 2. CUDA Toolkit 13.0 at: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0
+# 3. Visual Studio Build Tools (for PyAudio if building from source)
+#
+# ============================================================================
+# INSTALLATION ORDER:
+# ============================================================================
+#
+# STEP 1: Set CUDA environment variables (PowerShell):
+# $env:CUDA_PATH = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0"
+# $env:CUDA_HOME = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.0"
+#
+# STEP 2: Create virtual environment:
+# python -m venv venv
+# .\venv\Scripts\activate
+#
+# STEP 3: Install PyTorch (custom build):
+# If you have the original wheel:
+#   pip install C:\pytorch_build\pytorch\dist\torch-2.10.0a0+gitd4493c5-cp311-cp311-win_amd64.whl
+# Otherwise use closest official version:
+#   pip install torch==2.1.0 torchaudio==2.1.0 --index-url https://download.pytorch.org/whl/cu121
+#
+# STEP 4: Install PyAudio (custom build):
+# If you have the original wheel:
+#   pip install C:\pyaudio_build\pyaudio\dist\pyaudio-0.2.8-cp311-cp311-win_amd64.whl
+# Otherwise:
+#   pip install pipwin
+#   pipwin install pyaudio
+# Or download from: https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio
+#
+# STEP 5: Install remaining packages:
+# pip install -r requirements_minimal.txt
+#
+# ============================================================================
+
+# Core AI/ML packages
+numpy==1.26.4
+pillow==10.4.0
+
+# Audio processing
+sounddevice==0.5.2
+soundfile==0.13.1
+pyttsx3==2.99
+
+# Speech recognition & TTS
+faster-whisper==1.2.1
+vosk==0.3.45
+TTS==0.22.0
+
+# Discord integration
+discord.py==2.6.4
+
+# Web utilities
+requests==2.32.5
+beautifulsoup4==4.14.2
+websockets==15.0.1
+
+# GUI & automation
+pygame==2.6.1
+PyAutoGUI==0.9.54
+screeninfo==0.8.1
+
+# Utilities
+colorama==0.4.6
+python-dotenv==1.1.1
+
+# ============================================================================
+# CUSTOM BUILDS (install separately before this file):
+# ============================================================================
+# torch==2.10.0a0+gitd4493c5       # Custom CUDA 13.0 build
+# torchaudio==2.10.0a0+32ce8c0     # Installed with torch
+# PyAudio==0.2.8                   # Custom Windows build
+
+# ============================================================================
+# NOTES ON UNMAPPED IMPORTS:
+# ============================================================================
+# These are standard library modules (no installation needed):
+# - abc, argparse, ast, asyncio, atexit, base64, ctypes, dataclasses
+# - enum, hashlib, importlib, io, pickle, platform, queue, site
+# - socket, subprocess, tempfile, threading, tkinter, traceback, warnings, weakref
+#
+# These are local modules from your project:
+# - BASE (your shared code directory)
+# - personality (agent personality module)
+# - gui_themes (custom GUI themes)
