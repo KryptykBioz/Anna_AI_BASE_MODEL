@@ -70,3 +70,6 @@ node_modules/
 # Test Files
 test.html
 output.md
+
+# ignore tools updated in other repos
+installed/

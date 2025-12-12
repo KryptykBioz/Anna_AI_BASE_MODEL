@@ -1,7 +1,7 @@
 # File: BASE/interface/gui_interface.py
 """
 REFACTORED GUI: Uses centralized AI Core with new modular tool system
-UPDATED: Tool execution manager integration, unified architecture
+UPDATED: Removed hardcoded Coding panel - now uses modular component system
 """
 import tkinter as tk
 from tkinter import messagebox
@@ -23,7 +23,6 @@ try:
 
     from BASE.interface.voice_manager import VoiceManager
     from BASE.interface.gui_components import ControlPanelManager
-    from BASE.interface.coding_panel_manager import CodingPanelManager
     from BASE.interface.gui_session_files_panel import SessionFilesPanel
     from BASE.interface.gui_themes import DarkTheme
     from BASE.interface.gui_message_processor import MessageProcessor
@@ -31,7 +30,6 @@ try:
     from BASE.interface.gui_ui_builder import UIBuilder
     from BASE.interface.gui_chat_view import ChatView
     from BASE.interface.gui_theme_manager import ThemeManager
-    from BASE.interface.gui_discord_panel import DiscordPanel
 
 except ImportError as e:
     print(f"Error importing modules: {e}")
@@ -42,41 +40,28 @@ class OllamaGUI:
     def __init__(self, root):
         """
         Initialize GUI with VERIFIED singleton Config and Logger
-        
-        CRITICAL: This follows the strict initialization order:
-        1. Create Config (singleton)
-        2. Create Logger WITH Config
-        3. Verify logger has config
-        4. Create AICore with SAME Config
-        5. Verify all components share same config
         """
         self.root = root
         
         from personality.bot_info import agentname
         self.agentname = agentname
         
-        # Store reference to controls module
         import personality.controls as controls
         self.controls = controls
         
         self.root.title(f"{agentname} - Ollama Agent GUI")
         self.root.geometry("1600x1000")
         
-        # Initialize integrations to None
         self.twitch_chat = None
         self.youtube_chat = None
 
-        # ====================================================================
-        # STEP 1: CREATE SINGLETON CONFIG (BEFORE EVERYTHING ELSE)
-        # ====================================================================
+        # Create singleton Config
         from BASE.core.config import Config
         self.config = Config()
         
         print(f"[Init] Created singleton Config: {id(self.config)}")
 
-        # ====================================================================
-        # STEP 2: CREATE LOGGER WITH CONFIG REFERENCE
-        # ====================================================================
+        # Create Logger with Config reference
         from BASE.core.logger import Logger
         
         self.logger = Logger(
@@ -84,50 +69,31 @@ class OllamaGUI:
             enable_timestamps=True,
             enable_console=False,
             gui_callback=self._gui_log_callback,
-            config=self.config  # CRITICAL: Pass config immediately
+            config=self.config
         )
         
-        # ====================================================================
-        # STEP 3: VERIFY LOGGER HAS CONFIG REFERENCE
-        # ====================================================================
+        # Verify logger has config reference
         if not hasattr(self.logger, 'config') or self.logger.config is None:
-            raise RuntimeError(
-                "CRITICAL: Logger initialization failed - no config reference!\n"
-                "Check Logger.__init__() to ensure it stores config parameter."
-            )
+            raise RuntimeError("CRITICAL: Logger initialization failed - no config reference!")
         
         if id(self.logger.config) != id(self.config):
-            raise RuntimeError(
-                f"CRITICAL: Logger has DIFFERENT config instance!\n"
-                f"Expected: {id(self.config)}\n"
-                f"Got: {id(self.logger.config)}"
-            )
+            raise RuntimeError(f"CRITICAL: Logger has DIFFERENT config instance!")
         
         print(f"[Init] Logger has correct config: {id(self.logger.config)}")
 
-        # ====================================================================
-        # STEP 4: CREATE AI CORE WITH SAME CONFIG
-        # ====================================================================
+        # Create AI Core with same Config
         from BASE.core.ai_core import AICore
         
         self.ai_core = AICore(
-            config=self.config,  # SAME instance from step 1
+            config=self.config,
             controls_module=controls,
             project_root=project_root,
             gui_logger=self._gui_log_callback
         )
         
-        # AICore.__init__() should verify all components share same config
-        # If this doesn't raise an error, verification passed
-
-        # ====================================================================
-        # STEP 5: MANUAL VERIFICATION (OPTIONAL BUT RECOMMENDED)
-        # ====================================================================
         self._verify_config_chain()
 
-        # ====================================================================
-        # STEP 6: VERIFY TOOL EXECUTION MANAGER
-        # ====================================================================
+        # Verify tool execution manager
         if not hasattr(self.ai_core, 'tool_manager'):
             self.logger.error("CRITICAL: AI Core missing tool_manager!")
             raise RuntimeError("Tool manager not initialized")
@@ -139,11 +105,7 @@ class OllamaGUI:
         else:
             self.logger.system("No tools currently enabled")
 
-        # ====================================================================
-        # CONTINUE WITH REST OF INITIALIZATION
-        # ====================================================================
-        
-        # Setup external tools (TTS, etc.)
+        # Setup external tools
         self._setup_tts_tool()
         self._setup_integrations()
 
@@ -173,7 +135,6 @@ class OllamaGUI:
         if hasattr(self.ai_core, 'control_manager') and self.ai_core.control_manager:
             self.ai_core.control_manager.set_ai_core(self.ai_core)
             
-            # CRITICAL: Connect control manager to tool execution manager
             if hasattr(self.ai_core, 'tool_manager'):
                 self.ai_core.control_manager.set_tool_manager(
                     self.ai_core.tool_manager
@@ -184,11 +145,7 @@ class OllamaGUI:
         else:
             self.logger.warning("[WARNING] Control manager not found")
 
-        # Coding panel manager
-        from BASE.interface.coding_panel_manager import CodingPanelManager
-        self.coding_panel_manager = CodingPanelManager(self.ai_core, self.logger)
-
-        # Session files panel
+        # Session files panel (no longer needs coding panel reference)
         from BASE.interface.gui_session_files_panel import SessionFilesPanel
         self.session_files_panel = SessionFilesPanel(
             self.root,
@@ -231,26 +188,16 @@ class OllamaGUI:
         self.start_queue_processor()
 
         self.logger.system("GUI initialized successfully")
-        
         self.logger.system("INITIALIZATION SUMMARY")
-        
         self._print_config_summary()
 
-
     def _verify_config_chain(self):
-        """
-        Verify all components share the same config instance
-        
-        This is called after initialization to ensure singleton pattern
-        """
-        
+        """Verify all components share the same config instance"""
         print("CONFIG CHAIN VERIFICATION")
-        
         
         base_id = id(self.config)
         all_match = True
         
-        # Check main components
         checks = {
             'Main Config': self.config,
             'Logger Config': self.logger.config if hasattr(self.logger, 'config') else None,
@@ -276,19 +223,12 @@ class OllamaGUI:
             else:
                 print(f"  {name}: Correct ({id(cfg)})")
         
-        
-        
         if all_match:
             print("[SUCCESS] SUCCESS: All components share same config instance")
             self.logger.system("[Config Check] All components verified")
         else:
             print("[FAILED] FAILURE: Config instances don't match!")
-            raise RuntimeError(
-                "Config chain verification failed - components have different config instances"
-            )
-        
-        
-
+            raise RuntimeError("Config chain verification failed")
 
     def _print_config_summary(self):
         """Print initialization summary with config state"""
@@ -296,7 +236,6 @@ class OllamaGUI:
         print(f"Logger Instance: {id(self.logger)}")
         print(f"Logger Config: {id(self.logger.config) if hasattr(self.logger, 'config') else 'NONE'}")
         
-        # Show logging control states
         logging_controls = [
             'LOG_TOOL_EXECUTION',
             'LOG_PROMPT_CONSTRUCTION', 
@@ -309,32 +248,19 @@ class OllamaGUI:
             value = getattr(self.config, control, None)
             status = "[SUCCESS] ON" if value else "[FAILED] OFF"
             print(f"  {control}: {status}")
-        
-        
-
 
     def test_logging_controls(self):
-        """
-        Test that logging controls update immediately
-        
-        Call this after GUI initialization to verify live updates work
-        """
-        
+        """Test that logging controls update immediately"""
         self.logger.system("TESTING LIVE LOGGING CONTROLS")
         
-        
-        # Test LOG_TOOL_EXECUTION toggle
         initial = self.config.LOG_TOOL_EXECUTION
         self.logger.system(f"Initial LOG_TOOL_EXECUTION: {initial}")
         
-        # Test that logger sees current value
         self.logger.tool("Test message 1 - should appear if enabled")
         
-        # Toggle via control manager
         self.logger.system("Toggling LOG_TOOL_EXECUTION...")
         self.ai_core.control_manager.toggle_feature('LOG_TOOL_EXECUTION')
         
-        # Verify change propagated
         new_value = self.config.LOG_TOOL_EXECUTION
         logger_value = self.logger.config.LOG_TOOL_EXECUTION
         
@@ -348,14 +274,11 @@ class OllamaGUI:
             self.logger.error("[FAILED] Toggle failed - stale config reference!")
             return False
         
-        # Test that logging respects new setting
         self.logger.tool("Test message 2 - should NOT appear if disabled")
         
-        # Toggle back
         self.logger.system("Toggling back to original state...")
         self.ai_core.control_manager.toggle_feature('LOG_TOOL_EXECUTION')
         
-        # Verify restored
         final = self.config.LOG_TOOL_EXECUTION
         if final == initial:
             self.logger.system(f"[SUCCESS] Restored to initial state: {initial}")
@@ -365,15 +288,9 @@ class OllamaGUI:
         
         self.logger.tool("Test message 3 - should match initial state")
         
-        
         self.logger.system("[SUCCESS] LOGGING CONTROLS TEST PASSED")
-        
-        
         return True
 
-    # ========================================================================
-    # CONFIG ACCESS HELPERS
-    # ========================================================================
     def _config_get(self, key: str, default=None):
         """Robust getter for Config keys"""
         try:
@@ -398,17 +315,8 @@ class OllamaGUI:
         except Exception:
             return default
 
-    # ========================================================================
-    # TOOL SETUP (Dependency Injection)
-    # ========================================================================
-    
-    # _setup_animation_tool() - now handled by tool_execution_manager
-
     def _setup_tts_tool(self):
-        """
-        Setup TTS tool - LEGACY SYSTEM (in BASE/tools/internal/)
-        Only supports XTTS (custom voice) and pyttsx3 (system voice)
-        """
+        """Setup TTS tool - LEGACY SYSTEM"""
         if not controls.AVATAR_SPEECH:
             self.logger.speech("Speech disabled in config")
             self.tts_tool = None
@@ -505,21 +413,9 @@ class OllamaGUI:
             traceback.print_exc()
             self.tts_tool = None
 
-    # ========================================================================
-    # GUI LOGGING
-    # ========================================================================
     def _gui_log_callback(self, message: str, msg_type: str, color: str):
-        """
-        Callback for logger to send messages to GUI with color information
-        SIMPLIFIED: No filtering needed - logger handles all control logic
-        
-        Args:
-            message: Log message text
-            msg_type: Message type string (e.g., "system", "tool", "prompt")
-            color: Hex color code for display
-        """
+        """Callback for logger to send messages to GUI with color information"""
         if not hasattr(self, 'system_log') or not self.system_log:
-            # GUI not ready yet - store for later
             if not hasattr(self, '_pending_log_messages'):
                 self._pending_log_messages = []
             self._pending_log_messages.append((message, msg_type, color))
@@ -547,15 +443,11 @@ class OllamaGUI:
                 self._gui_log_callback(message, msg_type, color)
             del self._pending_log_messages
 
-    # ========================================================================
-    # INTEGRATIONS SETUP (LEGACY - PASSIVE CONTEXT)
-    # ========================================================================
     def _setup_integrations(self):
         """Initialize optional integrations - LEGACY (passive context)"""
         from BASE.tools.internal.chat.twitch_chat_direct import TwitchIntegration
         from BASE.tools.internal.chat.youtube_chat_direct import YouTubeIntegration
 
-        # Twitch Setup
         twitch_channel = self._config_get("TWITCH_CHANNEL")
         twitch_token = self._config_get("TWITCH_OAUTH_TOKEN")
         twitch_nick = self._config_get("agentname", getattr(self, 'agentname', None)) or getattr(self.config, 'agentname', None) or getattr(self, 'agentname', agentname)
@@ -574,7 +466,6 @@ class OllamaGUI:
             except Exception as e:
                 self.logger.error(f"Failed initializing Twitch integration: {e}")
 
-        # YouTube Setup
         youtube_video_id = self._config_get("YOUTUBE_VIDEO_ID")
         if youtube_video_id:
             try:
@@ -588,7 +479,7 @@ class OllamaGUI:
                 self.logger.error(f"Failed initializing YouTube integration: {e}")
 
     def _initialize_discord(self):
-        """Initialize Discord integration (called by GUI Discord panel)"""
+        """Initialize Discord integration"""
         try:
             if hasattr(self.ai_core, 'discord_integration') and self.ai_core.discord_integration:
                 self.logger.discord("Discord already initialized in AI Core")
@@ -623,10 +514,6 @@ class OllamaGUI:
             import traceback
             traceback.print_exc()
             raise
-    
-    # ========================================================================
-    # QUEUE PROCESSING
-    # ========================================================================
 
     def handle_autonomous_response(self, response: str):
         """Handle autonomous responses from cognitive loop"""
@@ -675,7 +562,6 @@ class OllamaGUI:
                 self.input_queue.put("__AUTO_PROMPT__")
                 self.last_auto_prompt = current_time
 
-            # Process message queue
             while not self.message_queue.empty():
                 try:
                     msg_type, sender, message = self.message_queue.get_nowait()
@@ -697,7 +583,6 @@ class OllamaGUI:
                 except queue.Empty:
                     break
 
-            # Process input queue
             if not self.processing and not self.input_queue.empty():
                 combined = []
                 while not self.input_queue.empty():
@@ -749,10 +634,6 @@ class OllamaGUI:
             if is_auto_prompt:
                 self.logger.system("Auto-prompt check complete")
 
-    # ========================================================================
-    # INITIALIZATION
-    # ========================================================================
-
     def setup_chat_with_history(self):
         """Setup chat interface with loaded conversation history"""
         try:
@@ -765,7 +646,6 @@ class OllamaGUI:
         except Exception as e:
             self.logger.error(f"Error loading conversation history: {e}")
 
-        # Inject autonomous response callback
         callback_registered = False
         if hasattr(self.ai_core, 'processing_delegator'):
             if hasattr(self.ai_core.processing_delegator, 'thought_processor'):
@@ -800,9 +680,6 @@ class OllamaGUI:
         except Exception as e:
             self.logger.error(f"Error checking memory stats: {e}")
 
-    # ========================================================================
-    # CLEANUP
-    # ========================================================================
     def on_closing(self):
         try:
             self.voice_manager.stop_voice_input()

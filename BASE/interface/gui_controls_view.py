@@ -1,28 +1,19 @@
 # Filename: BASE/interface/gui_controls_view.py
 """
-Complete updated file with Discord panel integration
+
 """
 
 import tkinter as tk
 from tkinter import ttk
 from BASE.interface.gui_themes import DarkTheme
 
-from BASE.interface.gui_youtube_panel import YouTubePanel
-from BASE.interface.gui_discord_panel import DiscordPanel
-from BASE.interface.gui_twitch_panel import TwitchPanel
 
 class ControlsView:
     """Manages the Controls view, including control panel and auxiliary panels"""
     
     def __init__(self, parent):
         self.parent = parent
-        from BASE.interface.gui_youtube_panel import YouTubePanel
-        from BASE.interface.gui_twitch_panel import TwitchPanel
-        from BASE.interface.gui_discord_panel import DiscordPanel
         
-        self.youtube_panel = YouTubePanel(parent)
-        self.twitch_panel = TwitchPanel(parent)
-        self.discord_panel = DiscordPanel(parent)
     
     def create_controls_view(self):
         """Create the Controls view with control panel and auxiliary panels"""
@@ -58,13 +49,3 @@ class ControlsView:
             style="Dark.TLabelframe"
         )
         integrations_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        # # YouTube Panel
-        # self.youtube_panel.create_youtube_panel(integrations_frame)
-        
-        # # Twitch Panel
-        # self.twitch_panel.create_twitch_panel(integrations_frame)
-        
-        # # Discord Panel
-        # self.discord_panel.create_discord_panel(integrations_frame)
-        
