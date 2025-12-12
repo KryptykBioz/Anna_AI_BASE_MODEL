@@ -1,8 +1,13 @@
 # Filename: BASE/handlers/tool_instruction_builder.py
 """
-Tool Instruction Builder - New BaseTool Architecture  
+Tool Instruction Builder - BaseTool Architecture
 Builds tool instruction sections from information.json files
-Reads directly from filesystem - FIXED: Complete instruction formatting
+Reads directly from filesystem
+
+BaseTool Architecture:
+- Single tool.py file with class inheriting from BaseTool
+- information.json with complete metadata
+- Tools discovered in BASE/tools/installed/
 """
 from typing import Dict, List, Optional
 from pathlib import Path

@@ -1,6 +1,6 @@
 # Filename: BASE/handlers/tool_lifecycle.py
 """
-Tool Lifecycle Manager
+Tool Lifecycle Manager - BaseTool Architecture Only
 Handles tool discovery, loading, starting, and stopping
 """
 from typing import Dict, Optional, Any
@@ -12,8 +12,12 @@ import json
 
 class ToolLifecycleManager:
     """
-    Manages tool discovery and lifecycle operations
-    Separated from ToolManager to reduce file complexity
+    Manages tool discovery and lifecycle for BaseTool architecture
+    
+    BaseTool Requirements:
+    - Single tool.py file with class ending in 'Tool'
+    - Class inherits from BaseTool
+    - information.json with metadata
     """
     
     def __init__(self, project_root: Path, logger=None):
@@ -38,12 +42,17 @@ class ToolLifecycleManager:
         self._thought_buffer = None
     
     # ========================================================================
-    # TOOL DISCOVERY
+    # TOOL DISCOVERY (BaseTool Only)
     # ========================================================================
     
     def discover_tools(self) -> Dict[str, Dict]:
         """
-        Discover all available tools from filesystem
+        Discover all BaseTool architecture tools
+        
+        Requirements for each tool:
+        - Directory in BASE/tools/installed/
+        - tool.py file with class ending in 'Tool' (not BaseTool)
+        - information.json with required metadata
         
         Returns:
             Dict mapping tool_name to metadata
@@ -52,7 +61,7 @@ class ToolLifecycleManager:
         
         if not tools_dir.exists():
             if self.logger:
-                self.logger.warning(f"Tools directory not found: {tools_dir}")
+                self.logger.warning(f"[Tool Discovery] Tools directory not found: {tools_dir}")
             return {}
         
         discovered = {}
@@ -61,16 +70,31 @@ class ToolLifecycleManager:
             if not tool_dir.is_dir():
                 continue
             
+            # Skip special directories
+            if tool_dir.name.startswith('_') or tool_dir.name.startswith('.'):
+                continue
+            
+            # Check for information.json
             info_file = tool_dir / 'information.json'
             if not info_file.exists():
+                if self.logger:
+                    self.logger.warning(
+                        f"[Tool Discovery] Skipping {tool_dir.name}: missing information.json"
+                    )
                 continue
             
+            # Check for tool.py (BaseTool architecture)
             tool_file = tool_dir / 'tool.py'
             if not tool_file.exists():
+                if self.logger:
+                    self.logger.warning(
+                        f"[Tool Discovery] Skipping {tool_dir.name}: missing tool.py"
+                    )
                 continue
             
+            # Load and validate metadata
             try:
-                with open(info_file, 'r') as f:
+                with open(info_file, 'r', encoding='utf-8') as f:
                     info = json.load(f)
                 
                 tool_name = info.get('tool_name')
@@ -79,14 +103,16 @@ class ToolLifecycleManager:
                 if not tool_name or not control_var:
                     if self.logger:
                         self.logger.warning(
-                            f"Invalid tool metadata in {tool_dir.name}"
+                            f"[Tool Discovery] Invalid metadata in {tool_dir.name}: "
+                            f"missing tool_name or control_variable_name"
                         )
                     continue
                 
+                # Store complete metadata
                 discovered[tool_name] = {
                     'tool_name': tool_name,
                     'control_variable': control_var,
-                    'description': info.get('tool_description', ''),
+                    'description': info.get('tool_description', 'No description'),
                     'commands': info.get('available_commands', []),
                     'timeout': info.get('timeout_seconds', 30),
                     'cooldown': info.get('cooldown_seconds', 0),
@@ -101,13 +127,24 @@ class ToolLifecycleManager:
                         f"(control: {control_var})"
                     )
             
+            except json.JSONDecodeError as e:
+                if self.logger:
+                    self.logger.error(
+                        f"[Tool Discovery] Invalid JSON in {tool_dir.name}: {e}"
+                    )
             except Exception as e:
                 if self.logger:
                     self.logger.error(
-                        f"Failed to load tool from {tool_dir.name}: {e}"
+                        f"[Tool Discovery] Error loading {tool_dir.name}: {e}"
                     )
         
         self._tool_metadata = discovered
+        
+        if self.logger:
+            self.logger.system(
+                f"[Tool Discovery] Complete: {len(discovered)} tool(s) found"
+            )
+        
         return discovered
     
     def get_tool_metadata(self, tool_name: str) -> Optional[Dict]:
@@ -142,12 +179,14 @@ class ToolLifecycleManager:
         return self._tool_metadata.copy()
     
     # ========================================================================
-    # TOOL LOADING
+    # TOOL LOADING (BaseTool Only)
     # ========================================================================
     
     def load_tool_class(self, tool_file: Path, tool_name: str):
         """
-        Dynamically load tool class from tool.py
+        Dynamically load BaseTool class from tool.py
+        
+        Searches for class ending in 'Tool' (but not 'BaseTool')
         
         Args:
             tool_file: Path to tool.py file
@@ -164,26 +203,52 @@ class ToolLifecycleManager:
             )
             
             if spec is None or spec.loader is None:
+                if self.logger:
+                    self.logger.error(
+                        f"[Tool Loading] Cannot create spec for {tool_file}"
+                    )
                 return None
             
             module = importlib.util.module_from_spec(spec)
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
             
-            # Find class ending in 'Tool' (but not BaseTool)
+            # Find class ending in 'Tool' (exclude BaseTool)
+            found_classes = []
             for attr_name in dir(module):
-                if attr_name.endswith('Tool') and not attr_name.startswith('Base'):
-                    tool_class = getattr(module, attr_name)
-                    if isinstance(tool_class, type):
-                        return tool_class
+                if not attr_name.endswith('Tool'):
+                    continue
+                if attr_name == 'BaseTool' or attr_name.startswith('Base'):
+                    continue
+                
+                tool_class = getattr(module, attr_name)
+                if isinstance(tool_class, type):
+                    found_classes.append((attr_name, tool_class))
             
-            return None
+            if not found_classes:
+                if self.logger:
+                    self.logger.error(
+                        f"[Tool Loading] No tool class found in {tool_file}"
+                    )
+                return None
+            
+            if len(found_classes) > 1:
+                if self.logger:
+                    names = [c[0] for c in found_classes]
+                    self.logger.warning(
+                        f"[Tool Loading] Multiple tool classes in {tool_file}: {names}, "
+                        f"using {found_classes[0][0]}"
+                    )
+            
+            return found_classes[0][1]
         
         except Exception as e:
             if self.logger:
                 self.logger.error(
-                    f"[Tool Lifecycle] Failed to load {tool_file}: {e}"
+                    f"[Tool Loading] Failed to load {tool_file}: {e}"
                 )
+            import traceback
+            traceback.print_exc()
             return None
     
     # ========================================================================
@@ -204,7 +269,13 @@ class ToolLifecycleManager:
     
     async def start_tool(self, tool_name: str, config, controls) -> bool:
         """
-        Start a tool by loading and initializing it
+        Start a BaseTool by loading and initializing it
+        
+        Process:
+        1. Load tool class from tool.py
+        2. Instantiate with (config, controls, logger)
+        3. Call tool.start(thought_buffer, event_loop)
+        4. Store instance in _active_tools
         
         Args:
             tool_name: Name of tool to start
@@ -243,14 +314,14 @@ class ToolLifecycleManager:
                     )
                 return False
             
-            # Instantiate tool
+            # Instantiate tool (BaseTool signature)
             tool_instance = tool_class(
                 config=config,
                 controls=controls,
                 logger=self.logger
             )
             
-            # Call tool's start() method (which calls initialize())
+            # Call tool's start() method
             await tool_instance.start(
                 thought_buffer=self._thought_buffer,
                 event_loop=self._event_loop
@@ -277,7 +348,7 @@ class ToolLifecycleManager:
     
     async def stop_tool(self, tool_name: str) -> bool:
         """
-        Stop a tool by calling its end() method
+        Stop a BaseTool by calling its end() method
         
         Args:
             tool_name: Name of tool to stop
@@ -295,7 +366,7 @@ class ToolLifecycleManager:
             return False
         
         try:
-            # Call tool's end() method (which calls cleanup())
+            # Call tool's end() method
             await tool_instance.end()
             
             # Remove from active tools

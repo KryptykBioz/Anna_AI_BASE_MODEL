@@ -1,6 +1,6 @@
 # Filename: BASE/handlers/tool_manager.py
 """
-Tool Manager - Main Coordination and Execution
+Tool Manager - Main Coordination and Execution (BaseTool Architecture)
 Handles tool instruction persistence and action execution
 Works with ToolLifecycleManager for discovery and lifecycle operations
 """
@@ -14,12 +14,17 @@ from BASE.handlers.tool_lifecycle import ToolLifecycleManager
 
 class ToolManager:
     """
-    Main tool manager coordinating instruction persistence and execution
-    Uses ToolLifecycleManager for discovery and lifecycle operations
+    Main tool manager for BaseTool architecture
+    
+    Responsibilities:
+    - Coordinate with lifecycle manager for tool discovery/lifecycle
+    - Execute tool actions with instruction persistence enforcement
+    - Track instruction retrieval timers via persistence manager
+    - Generate tool instructions for prompts
     """
     
     def __init__(self, config, controls_module, action_state_manager, project_root, logger=None):
-        """Initialize tool manager with instruction tracking"""
+        """Initialize tool manager"""
         self.config = config
         self.controls = controls_module
         self.action_state_manager = action_state_manager
@@ -36,16 +41,9 @@ class ToolManager:
         )
         self.lifecycle_manager.set_active_tools(self._active_tools)
         
-        # Tool metadata cache (populated by lifecycle manager)
-        self._tool_metadata: Dict[str, Dict] = {}
-        
         # Event loop and thought buffer
         self._event_loop = None
         self._thought_buffer = None
-        
-        # Instruction persistence tracking
-        self._retrieved_instructions: Dict[str, float] = {}  # tool_name -> timestamp
-        self._instruction_timeout: float = 360.0  # 6 minutes
         
         # Pending tool instructions for next prompt
         self.pending_tool_instructions = None
@@ -54,11 +52,12 @@ class ToolManager:
         self.instruction_persistence_manager = None
         
         # Discover available tools
-        self._tool_metadata = self.lifecycle_manager.discover_tools()
+        self.lifecycle_manager.discover_tools()
         
         if self.logger:
+            discovered_count = len(self.lifecycle_manager.get_all_metadata())
             self.logger.system(
-                f"[Tool Manager] Initialized with {len(self._tool_metadata)} tools"
+                f"[Tool Manager] Initialized with {discovered_count} tools discovered"
             )
     
     # ========================================================================
@@ -99,14 +98,32 @@ class ToolManager:
     
     def get_tool_count(self) -> Dict[str, int]:
         """Get count of enabled vs total tools"""
+        all_metadata = self.lifecycle_manager.get_all_metadata()
         return {
             'enabled': len(self._active_tools),
-            'total': len(self._tool_metadata)
+            'total': len(all_metadata)
         }
     
     def get_all_tool_info(self) -> List[Dict]:
-        """Get info for all discovered tools (for GUI generation)"""
-        return list(self._tool_metadata.values())
+        """
+        Get info for all discovered tools
+        Returns list of metadata dicts for GUI or external use
+        """
+        all_metadata = self.lifecycle_manager.get_all_metadata()
+        
+        tool_info_list = []
+        for tool_name, metadata in all_metadata.items():
+            tool_info_list.append({
+                'tool_name': tool_name,
+                'control_variable': metadata.get('control_variable'),
+                'description': metadata.get('description'),
+                'commands': metadata.get('commands', []),
+                'timeout': metadata.get('timeout', 30),
+                'cooldown': metadata.get('cooldown', 0),
+                'enabled': tool_name in self._active_tools
+            })
+        
+        return tool_info_list
     
     # ========================================================================
     # TOOL LIFECYCLE CONTROL
@@ -118,13 +135,15 @@ class ToolManager:
         Starts or stops tools based on control variable changes
         
         Args:
-            control_name: Name of control variable (e.g., 'USE_WARUDO_ANIMATION')
+            control_name: Name of control variable (e.g., 'USE_WIKI_SEARCH')
             value: New value (True = enable, False = disable)
         """
         # Find which tool this control belongs to
+        all_metadata = self.lifecycle_manager.get_all_metadata()
         tool_name = None
-        for name, metadata in self._tool_metadata.items():
-            if metadata['control_variable'] == control_name:
+        
+        for name, metadata in all_metadata.items():
+            if metadata.get('control_variable') == control_name:
                 tool_name = name
                 break
         
@@ -198,83 +217,7 @@ class ToolManager:
             self.logger.system("[Tool Manager] Cleanup complete")
     
     # ========================================================================
-    # INSTRUCTION RETRIEVAL TRACKING
-    # ========================================================================
-    
-    def _mark_instructions_retrieved(self, tool_name: str):
-        """Mark that instructions were retrieved for a tool (resets timer)"""
-        current_time = time.time()
-        was_refresh = tool_name in self._retrieved_instructions
-        self._retrieved_instructions[tool_name] = current_time
-        
-        if self.logger:
-            if was_refresh:
-                self.logger.system(
-                    f"[Tool Manager] Instructions refreshed: {tool_name} "
-                    f"(timer reset to {self._instruction_timeout / 60:.0f} minutes)"
-                )
-            else:
-                self.logger.system(
-                    f"[Tool Manager] Instructions retrieved: {tool_name} "
-                    f"(valid for {self._instruction_timeout / 60:.0f} minutes)"
-                )
-    
-    def _has_retrieved_instructions(self, tool_name: str) -> bool:
-        """Check if instructions were recently retrieved (auto-expires)"""
-        if tool_name not in self._retrieved_instructions:
-            return False
-        
-        retrieval_time = self._retrieved_instructions[tool_name]
-        current_time = time.time()
-        elapsed = current_time - retrieval_time
-        
-        if elapsed > self._instruction_timeout:
-            # Expired - remove from tracking
-            del self._retrieved_instructions[tool_name]
-            
-            if self.logger:
-                self.logger.system(
-                    f"[Tool Manager] Instructions expired for {tool_name} "
-                    f"(elapsed: {elapsed / 60:.1f} minutes)"
-                )
-            
-            return False
-        
-        return True
-    
-    def _get_instruction_time_remaining(self, tool_name: str) -> Optional[float]:
-        """Get time remaining before instructions expire"""
-        if tool_name not in self._retrieved_instructions:
-            return None
-        
-        retrieval_time = self._retrieved_instructions[tool_name]
-        current_time = time.time()
-        elapsed = current_time - retrieval_time
-        remaining = self._instruction_timeout - elapsed
-        
-        return max(0.0, remaining)
-    
-    def get_active_instruction_status(self) -> Dict[str, Dict[str, Any]]:
-        """Get status of all active instruction retrievals"""
-        current_time = time.time()
-        status = {}
-        
-        for tool_name, retrieval_time in self._retrieved_instructions.items():
-            elapsed = current_time - retrieval_time
-            remaining = self._instruction_timeout - elapsed
-            
-            status[tool_name] = {
-                'retrieved_at': retrieval_time,
-                'elapsed_seconds': elapsed,
-                'remaining_seconds': remaining,
-                'is_valid': remaining > 0,
-                'expires_in_minutes': remaining / 60.0
-            }
-        
-        return status
-    
-    # ========================================================================
-    # ACTION EXECUTION
+    # ACTION EXECUTION (Unchanged - instruction persistence enforcement)
     # ========================================================================
     
     async def execute_structured_actions(
@@ -386,7 +329,15 @@ class ToolManager:
         action: Dict[str, Any],
         thought_buffer
     ):
-        """Execute a single tool action with instruction persistence check"""
+        """
+        Execute a single tool action with instruction persistence check
+        
+        BaseTool execution:
+        1. Parse tool_name.command format
+        2. Get active tool instance
+        3. Check instruction persistence
+        4. Call tool_instance.execute(command, args)
+        """
         tool_call = action.get('tool', '')
         args = action.get('args', [])
         
@@ -398,10 +349,11 @@ class ToolManager:
         tool_name = parts[0]
         command = parts[1] if len(parts) > 1 else ''
         
-        # Check if tool exists in metadata
-        if tool_name not in self._tool_metadata:
+        # Check if tool exists in discovered metadata
+        all_metadata = self.lifecycle_manager.get_all_metadata()
+        if tool_name not in all_metadata:
             if self.logger:
-                available = list(self._tool_metadata.keys())
+                available = list(all_metadata.keys())
                 self.logger.warning(
                     f"[Tool Manager] Unknown tool '{tool_name}'. "
                     f"Available tools: {available}"
@@ -410,7 +362,7 @@ class ToolManager:
             thought_buffer.add_processed_thought(
                 content=(
                     f"Tool '{tool_name}' not found. "
-                    f"Available: {', '.join(list(self._tool_metadata.keys())[:5])}"
+                    f"Available: {', '.join(list(all_metadata.keys())[:5])}"
                 ),
                 source='tool_error',
                 priority_override="HIGH"
@@ -421,7 +373,7 @@ class ToolManager:
         tool_instance = self._active_tools.get(tool_name)
         
         if not tool_instance:
-            metadata = self._tool_metadata[tool_name]
+            metadata = all_metadata[tool_name]
             control_var = metadata.get('control_variable', 'UNKNOWN')
             
             if self.logger:
@@ -470,7 +422,7 @@ class ToolManager:
                 
                 return
         
-        # Check if tool is available
+        # Check if tool is available (BaseTool.is_available())
         if not tool_instance.is_available():
             if self.logger:
                 self.logger.warning(
@@ -492,12 +444,13 @@ class ToolManager:
         )
         
         # Execute with timeout
-        metadata = self._tool_metadata.get(tool_name, {})
+        metadata = all_metadata.get(tool_name, {})
         timeout = metadata.get('timeout', 30)
         
         try:
             self.action_state_manager.mark_in_progress(action_id)
             
+            # Call BaseTool.execute(command, args)
             result = await asyncio.wait_for(
                 tool_instance.execute(command, args),
                 timeout=timeout
@@ -600,8 +553,8 @@ class ToolManager:
             self.pending_tool_instructions = None
             
             if all_tools_to_include:
-                from BASE.handlers.tool_instruction_builder import ToolInstructionBuilder
-                # This would need the tool registry - simplified for now
+                # Detailed instructions would be built here
+                # For now, return tool list
                 return self._build_tool_list()
         
         # Default: Return minimal tool list
@@ -617,8 +570,9 @@ class ToolManager:
             "**Tool List:**"
         ]
         
+        all_metadata = self.lifecycle_manager.get_all_metadata()
         for tool_name in self._active_tools.keys():
-            metadata = self._tool_metadata.get(tool_name)
+            metadata = all_metadata.get(tool_name)
             if metadata:
                 description = metadata.get('description', 'No description')
                 lines.append(f"- `{tool_name}`: {description}")

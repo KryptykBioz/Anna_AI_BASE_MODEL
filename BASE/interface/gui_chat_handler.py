@@ -1,8 +1,7 @@
-# Filename: BASE/interface/gui_chat_handler.py
+# gui_chat_handler.py - UPDATED: Simplified filtering (already done in gui_chat_view)
 """
 GUI Chat Handler - Manages message flow between GUI and AI Core
-FIXES: Proper user message saving, message ordering, auto-prompt handling
-FIXED: Content filter now uses centralized AI Core filter with dynamic toggle
+UPDATED: Filtering now happens in gui_chat_view before display
 """
 
 from datetime import datetime
@@ -13,9 +12,9 @@ import threading
 class GUIMessageHandler:
     """
     Handles the complete message flow:
-    1. User submits message
+    1. User submits message (filtered in gui_chat_view)
     2. Save to memory immediately
-    3. Display in GUI
+    3. Display in GUI (already filtered)
     4. Process through AI Core
     5. Display bot response
     """
@@ -37,77 +36,53 @@ class GUIMessageHandler:
         self.username = ai_core.config.username
         self.agentname = ai_core.config.agentname
         
-        # Use centralized content filter from AI Core
-        # This ensures single filter instance and respects ENABLE_CONTENT_FILTER toggle
         self.content_filter = ai_core.content_filter
         self.controls = ai_core.controls
     
     def handle_user_message(self, message: str, is_auto_prompt: bool = False):
         """
         Handle complete user message flow
-        
-        FIXED: Auto-prompts now pass empty string to AI Core for background processing
-        FIXED: Content filter respects ENABLE_CONTENT_FILTER control variable
+        UPDATED: Message is already filtered when it arrives here
         
         Args:
-            message: User's message text (can be empty for auto-prompts)
+            message: User's message text (already filtered, can be empty for auto-prompts)
             is_auto_prompt: Whether this is from auto-prompt system
         """
-        # For auto-prompts, process with empty message (triggers proactive check)
         if is_auto_prompt:
             self.logger.system("Processing auto-prompt (background check)")
             self._process_message_async("")
             return
         
-        # Skip truly empty user messages
         if not message or not message.strip():
             self.logger.warning("Skipping empty user message")
             return
         
-        # FIXED: Check ENABLE_CONTENT_FILTER before filtering
-        if message and message.strip() and getattr(self.controls, 'ENABLE_CONTENT_FILTER', True):
-            cleaned_message, was_filtered, reason = self.content_filter.filter_incoming(
-                message,
-                log_callback=self.logger.system
-            )
-            
-            if was_filtered:
-                self.logger.system(f"[Filter] Cleaned incoming: {reason}")
-            
-            message = cleaned_message
+        # NOTE: Filtering already done in gui_chat_view.send_message()
+        # Message arrives here pre-filtered
         
-        # Step 1: Save user message to memory IMMEDIATELY
+        # Save user message to memory
         user_entry = self.ai_core.memory_manager.save_user_message(message)
         
-        # Step 2: Log save (no GUI display here - already shown by send_message)
         if user_entry:
-            self.logger.system(f"User message saved and displayed: {message[:50]}...")
+            self.logger.system(f"User message saved: {message[:50]}...")
         else:
             self.logger.warning("Memory saving disabled")
         
-        # Step 3: Process message asynchronously
+        # Process message asynchronously
         self._process_message_async(message)
     
     def _process_message_async(self, message: str):
         """Process message in background thread"""
-        processing_thread = threading.Thread(
+        t = threading.Thread(
             target=self.message_processor.process_message,
             args=(message,),
             daemon=True,
             name="GUI_Message_Processing"
         )
-        processing_thread.start()
+        t.start()
     
     def _extract_time(self, full_timestamp: str) -> str:
-        """
-        Extract time portion from full timestamp
-        
-        Args:
-            full_timestamp: e.g., "Wednesday, November 12, 2025 at 10:01:54 PM"
-            
-        Returns:
-            Time string: "22:01:54" or original if parsing fails
-        """
+        """Extract time portion from full timestamp"""
         try:
             if " at " in full_timestamp:
                 time_part = full_timestamp.split(" at ")[1]
@@ -119,10 +94,7 @@ class GUIMessageHandler:
             return full_timestamp
     
     def load_conversation_history(self, messages_to_load: int = 400):
-        """
-        Load conversation history from memory and display in GUI
-        FIXED: Proper chronological ordering using full datetime
-        """
+        """Load conversation history from memory and display in GUI"""
         try:
             self.logger.memory("Checking for date rollover and previous day summarization...")
             self.ai_core.memory_manager.check_and_summarize_previous_day()
