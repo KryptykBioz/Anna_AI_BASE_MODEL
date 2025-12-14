@@ -47,16 +47,17 @@ class ConfigView:
         )
         warning_label.pack(side=tk.RIGHT, padx=15, pady=10)
         
-        # Create main container with two sections
-        main_container = tk.Frame(config_frame, bg=DarkTheme.BG_DARK)
+        # Create main container with two sections using PanedWindow for responsive resizing
+        main_container = ttk.PanedWindow(config_frame, orient=tk.HORIZONTAL)
         main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Split into two columns
+        # Left panel for bot_info
         left_panel = tk.Frame(main_container, bg=DarkTheme.BG_DARK)
-        left_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        main_container.add(left_panel, weight=1)
         
+        # Right panel for personality
         right_panel = tk.Frame(main_container, bg=DarkTheme.BG_DARK)
-        right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        main_container.add(right_panel, weight=1)
         
         # Create bot info editor (left side)
         self.create_bot_info_editor(left_panel)

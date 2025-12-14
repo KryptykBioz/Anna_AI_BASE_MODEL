@@ -1,6 +1,6 @@
 # ============================================================================
 # Filename: BASE/tools/internal/voice/text_to_system_voice.py
-# FIXED V2: Volume control via audio data multiplication (more reliable)
+# FIXED: Removed volume override bug - now respects passed volume parameter
 # ============================================================================
 """
 System Voice (pyttsx3) Implementation
@@ -11,9 +11,7 @@ Used by Pyttsx3Backend to generate and play speech.
 CRITICAL: Never call engine.stop() - it breaks subsequent calls.
 The engine must stay running between speech operations.
 
-FIXED V2: Volume applied to audio data for cross-platform reliability
-pyttsx3's engine.setProperty('volume') is unreliable on some systems,
-so we generate at full volume then scale the audio data.
+FIXED: Volume parameter is now properly respected (not overridden)
 """
 import os
 import tempfile
@@ -71,18 +69,14 @@ def speak_system_voice(text: str, engine, stop_event=None, volume: float = 1.0) 
     CRITICAL: This function does NOT call engine.stop()
     The engine must remain running for subsequent calls.
     
-    FIXED V2: Volume applied directly to audio data for reliability
-    Some pyttsx3 backends don't respect the volume property, so we:
-    1. Generate audio at full volume
-    2. Load the WAV file
-    3. Multiply audio data by volume (0.0 to 1.0)
-    4. Play the scaled audio
+    FIXED: Now properly uses the volume parameter passed from backend
+    The backend reads from controls module, this function uses that value
     
     Args:
         text: Text to speak (will be cleaned automatically)
         engine: pyttsx3 engine instance (should be fresh per call)
         stop_event: Optional threading.Event to interrupt speech
-        volume: Volume level (0.0 to 1.0, default 1.0)
+        volume: Volume level (0.0 to 1.0) - passed from backend
         
     Returns:
         "Speech completed", "Interrupted", or "Error: <message>"
@@ -155,9 +149,8 @@ def speak_system_voice(text: str, engine, stop_event=None, volume: float = 1.0) 
         # Load audio data
         data, samplerate = sf.read(temp_wav, dtype='float32')
         
-        # CRITICAL FIX: Apply volume to audio data
-        # This is more reliable than pyttsx3's volume property
-        # Clamp volume to valid range (0.0 to 1.0)
+        # CRITICAL FIX: Use the passed volume parameter (don't re-read from controls)
+        # The backend already read from controls.VOICE_VOLUME and passed it here
         clamped_volume = max(0.0, min(1.0, volume))
         
         if clamped_volume < 1.0:
@@ -194,6 +187,8 @@ def speak_system_voice(text: str, engine, stop_event=None, volume: float = 1.0) 
 
     except Exception as e_main:
         logger.error(f"System TTS failed: {e_main}")
+        import traceback
+        traceback.print_exc()
         return f"Error: {e_main}"
         
     finally:

@@ -1,13 +1,12 @@
-# gui_chat_view.py - FIXED: Filter user input before display
+# gui_chat_view.py - Theme-aware chat view
 import tkinter as tk
 from tkinter import ttk
 from datetime import datetime
-from gui_themes import DarkTheme
 from personality.bot_info import agentname, username
 from BASE.core.logger import MessageType, Logger
 
 class ChatView:
-    """Manages the Chat view, including system information and chat panel"""
+    """Manages the Chat view with dynamic theme support"""
     
     MESSAGE_TYPE_TO_TAG = {
         MessageType.USER: "user",
@@ -34,8 +33,17 @@ class ChatView:
     def __init__(self, parent):
         self.parent = parent
     
+    def get_theme(self):
+        """Get current theme from theme manager"""
+        return self.parent.ui_builder.theme_manager.get_theme()
+    
+    def get_font(self):
+        """Get font based on current theme"""
+        theme_name = self.parent.ui_builder.theme_manager.theme_name
+        return "Courier New" if theme_name == "Cyber" else "Segoe UI"
+    
     def create_chat_view(self):
-        """Create the Chat view with System Information and Chat"""
+        """Create the Chat view with system panel and chat panel"""
         chat_paned = ttk.PanedWindow(self.parent.chat_view, orient=tk.HORIZONTAL)
         chat_paned.pack(fill=tk.BOTH, expand=True)
         
@@ -50,7 +58,17 @@ class ChatView:
 
     def create_system_panel(self, parent_frame):
         """Create system information panel"""
-        system_frame = ttk.LabelFrame(parent_frame, text="System Information", style="Dark.TLabelframe")
+        theme = self.get_theme()
+        font_name = self.get_font()
+        
+        # Title based on theme
+        title = "⚡ SYSTEM LOG" if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else "System Information"
+        
+        system_frame = ttk.LabelFrame(
+            parent_frame, 
+            text=title,
+            style="Dark.TLabelframe"
+        )
         system_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
         text_frame = ttk.Frame(system_frame)
@@ -65,13 +83,14 @@ class ChatView:
             width=100,
             wrap=tk.WORD,
             state=tk.DISABLED,
-            font=("Consolas", 9),
-            bg=DarkTheme.BG_DARK,
-            fg=DarkTheme.FG_PRIMARY,
-            insertbackground=DarkTheme.FG_PRIMARY,
-            selectbackground=DarkTheme.ACCENT_PURPLE,
-            selectforeground=DarkTheme.FG_PRIMARY,
-            borderwidth=0,
+            font=(font_name, 9),
+            bg=theme.BG_DARK,
+            fg=theme.FG_PRIMARY,
+            insertbackground=theme.ACCENT_GREEN if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else theme.FG_PRIMARY,
+            selectbackground=theme.ACCENT_PURPLE,
+            selectforeground=theme.ACCENT_GREEN if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else theme.FG_PRIMARY,
+            borderwidth=2 if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else 0,
+            relief='solid' if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else 'flat',
             highlightthickness=0,
             yscrollcommand=scrollbar.set
         )
@@ -82,7 +101,20 @@ class ChatView:
 
     def create_chat_panel(self, parent_frame):
         """Create chat display and input panel"""
-        chat_frame = ttk.LabelFrame(parent_frame, text=f"Chat with {agentname}", style="Dark.TLabelframe")
+        theme = self.get_theme()
+        font_name = self.get_font()
+        
+        # Title based on theme
+        if self.parent.ui_builder.theme_manager.theme_name == "Cyber":
+            title = f"💬 CHAT // {agentname.upper()}"
+        else:
+            title = f"Chat with {agentname}"
+        
+        chat_frame = ttk.LabelFrame(
+            parent_frame, 
+            text=title,
+            style="Accent.TLabelframe" if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else "Dark.TLabelframe"
+        )
         chat_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
         text_frame = ttk.Frame(chat_frame)
@@ -95,13 +127,14 @@ class ChatView:
             text_frame,
             wrap=tk.WORD,
             state=tk.DISABLED,
-            font=("Segoe UI", 10),
-            bg=DarkTheme.BG_DARK,
-            fg=DarkTheme.FG_PRIMARY,
-            insertbackground=DarkTheme.FG_PRIMARY,
-            selectbackground=DarkTheme.ACCENT_PURPLE,
-            selectforeground=DarkTheme.FG_PRIMARY,
-            borderwidth=0,
+            font=(font_name, 10),
+            bg=theme.BG_DARK,
+            fg=theme.FG_PRIMARY,
+            insertbackground=theme.ACCENT_GREEN if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else theme.FG_PRIMARY,
+            selectbackground=theme.ACCENT_PURPLE,
+            selectforeground=theme.ACCENT_GREEN if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else theme.FG_PRIMARY,
+            borderwidth=2 if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else 0,
+            relief='solid' if self.parent.ui_builder.theme_manager.theme_name == "Cyber" else 'flat',
             highlightthickness=0,
             yscrollcommand=scrollbar.set
         )
@@ -113,30 +146,31 @@ class ChatView:
         self.create_input_panel(parent_frame)
 
     def _configure_chat_display_tags(self):
-        """Configure color tags for chat display using Logger's color scheme"""
+        """Configure color tags with current theme colors"""
         logger = self.parent.logger
+        font_name = self.get_font()
         
         font_configs = {
-            "user": ("Segoe UI", 10, "bold"),
-            "agent": ("Segoe UI", 10, "bold"),
-            "system": ("Segoe UI", 9, "italic"),
-            "error": ("Segoe UI", 10, "bold"),
-            "warning": ("Segoe UI", 10, "bold"),
-            "success": ("Segoe UI", 10, "bold"),
-            "voice": ("Segoe UI", 10, "italic"),
-            "discord": ("Segoe UI", 10, "bold"),
-            "youtube": ("Segoe UI", 10, "bold"),
-            "twitch": ("Segoe UI", 10, "bold"),
-            "minecraft": ("Segoe UI", 10, "bold"),
-            "league": ("Segoe UI", 10, "bold"),
-            "warudo": ("Segoe UI", 10, "bold"),
-            "memory": ("Segoe UI", 9, "italic"),
-            "thinking": ("Segoe UI", 9, "italic"),
-            "goal": ("Segoe UI", 10, "bold"),
-            "speech": ("Segoe UI", 9, "italic"),
-            "audio": ("Segoe UI", 9, "italic"),
-            "prompt": ("Segoe UI", 9, "italic"),
-            "tool": ("Segoe UI", 9, "italic"),
+            "user": (font_name, 10, "bold"),
+            "agent": (font_name, 10, "bold"),
+            "system": (font_name, 9, "italic"),
+            "error": (font_name, 10, "bold"),
+            "warning": (font_name, 10, "bold"),
+            "success": (font_name, 10, "bold"),
+            "voice": (font_name, 10, "italic"),
+            "discord": (font_name, 10, "bold"),
+            "youtube": (font_name, 10, "bold"),
+            "twitch": (font_name, 10, "bold"),
+            "minecraft": (font_name, 10, "bold"),
+            "league": (font_name, 10, "bold"),
+            "warudo": (font_name, 10, "bold"),
+            "memory": (font_name, 9, "italic"),
+            "thinking": (font_name, 9, "italic"),
+            "goal": (font_name, 10, "bold"),
+            "speech": (font_name, 9, "italic"),
+            "audio": (font_name, 9, "italic"),
+            "prompt": (font_name, 9, "italic"),
+            "tool": (font_name, 9, "italic"),
         }
         
         for tag, font in font_configs.items():
@@ -146,26 +180,54 @@ class ChatView:
 
     def create_input_panel(self, parent_frame):
         """Create input panel with text box and buttons"""
+        theme = self.get_theme()
+        font_name = self.get_font()
+        is_cyber = self.parent.ui_builder.theme_manager.theme_name == "Cyber"
+        
         input_frame = ttk.Frame(parent_frame)
         input_frame.pack(fill=tk.X, pady=(5, 0))
         
-        button_frame = ttk.Frame(input_frame, width=80)
+        button_frame = ttk.Frame(input_frame, width=90 if is_cyber else 80)
         button_frame.pack(side=tk.RIGHT, fill=tk.Y)
         button_frame.pack_propagate(False)
         
-        self.parent.send_button = ttk.Button(button_frame, text="Send", command=self.send_message)
+        # Button styling based on theme
+        button_style = {
+            'font': (font_name, 9, "bold"),
+            'bg': theme.BUTTON_BG,
+            'fg': theme.ACCENT_GREEN if is_cyber else theme.FG_PRIMARY,
+            'activebackground': theme.ACCENT_PURPLE if is_cyber else theme.BUTTON_HOVER,
+            'activeforeground': theme.ACCENT_GREEN if is_cyber else theme.FG_PRIMARY,
+            'borderwidth': 2 if is_cyber else 1,
+            'relief': 'solid' if is_cyber else 'flat',
+            'highlightbackground': theme.BORDER,
+            'highlightthickness': 2 if is_cyber else 0,
+            'cursor': 'hand2'
+        }
+        
+        self.parent.send_button = tk.Button(
+            button_frame, 
+            text="[ SEND ]" if is_cyber else "Send",
+            command=self.send_message,
+            **button_style
+        )
         self.parent.send_button.pack(fill=tk.X, pady=(0, 3))
         
-        clear_button = ttk.Button(button_frame, text="Clear", command=self.clear_chat)
+        clear_button = tk.Button(
+            button_frame, 
+            text="[ CLEAR ]" if is_cyber else "Clear",
+            command=self.clear_chat,
+            **button_style
+        )
         clear_button.pack(fill=tk.X, pady=(0, 3))
         
         self.parent.processing_label = tk.Label(
             button_frame,
             text="",
-            font=("Segoe UI", 7),
-            foreground=DarkTheme.ACCENT_PURPLE,
-            background=DarkTheme.BG_DARKER,
-            wraplength=75
+            font=(font_name, 7),
+            foreground=theme.ACCENT_PURPLE,
+            background=theme.BG_DARKER,
+            wraplength=85 if is_cyber else 75
         )
         self.parent.processing_label.pack(fill=tk.X, pady=(3, 0))
         
@@ -176,15 +238,17 @@ class ChatView:
             text_container,
             height=4,
             wrap=tk.WORD,
-            font=("Segoe UI", 10),
-            bg=DarkTheme.BG_LIGHTER,
-            fg=DarkTheme.FG_PRIMARY,
-            insertbackground=DarkTheme.FG_PRIMARY,
-            selectbackground=DarkTheme.ACCENT_PURPLE,
-            selectforeground=DarkTheme.FG_PRIMARY,
-            borderwidth=0,
-            highlightthickness=0,
-            relief="flat"
+            font=(font_name, 10),
+            bg=theme.BG_LIGHTER,
+            fg=theme.FG_PRIMARY,
+            insertbackground=theme.ACCENT_GREEN if is_cyber else theme.FG_PRIMARY,
+            selectbackground=theme.ACCENT_PURPLE,
+            selectforeground=theme.ACCENT_GREEN if is_cyber else theme.FG_PRIMARY,
+            borderwidth=2 if is_cyber else 0,
+            highlightthickness=2 if is_cyber else 0,
+            highlightbackground=theme.BORDER,
+            highlightcolor=theme.ACCENT_GREEN if is_cyber else theme.ACCENT_PURPLE,
+            relief='solid' if is_cyber else 'flat'
         )
         self.parent.input_text.pack(fill=tk.BOTH, expand=True)
         
@@ -195,7 +259,7 @@ class ChatView:
         return None if event.state & 0x1 else (self.send_message(), "break")[1]
 
     def send_message(self):
-        """FIXED: Filter user input BEFORE display and queueing"""
+        """Filter user input BEFORE display and queueing"""
         import time
         msg = self.parent.input_text.get("1.0", tk.END).strip()
         if not msg:
@@ -222,7 +286,7 @@ class ChatView:
         self.parent.last_interaction = time.time()
 
     def add_message(self, sender, message, msg_type=MessageType.USER):
-        """Add a message to the chat display with proper color formatting"""
+        """Add a message to the chat display with theme-aware formatting"""
         if isinstance(msg_type, str):
             msg_type = self._convert_legacy_type(msg_type)
         
@@ -232,6 +296,7 @@ class ChatView:
         self.parent.chat_display.insert(tk.END, f"[{ts}] ", "system")
         
         tag = self.MESSAGE_TYPE_TO_TAG.get(msg_type, "system")
+        is_cyber = self.parent.ui_builder.theme_manager.theme_name == "Cyber"
         
         if msg_type == MessageType.SYSTEM:
             self.parent.chat_display.insert(tk.END, f"{message}\n", tag)
@@ -239,10 +304,12 @@ class ChatView:
             self.parent.chat_display.insert(tk.END, f"{sender}: ", tag)
             self.parent.chat_display.insert(tk.END, f"{message}\n", tag)
         elif msg_type == MessageType.USER:
-            self.parent.chat_display.insert(tk.END, f"{sender}: ", tag)
+            prefix = ">> " if is_cyber else ""
+            self.parent.chat_display.insert(tk.END, f"{prefix}{sender}: ", tag)
             self.parent.chat_display.insert(tk.END, f"{message}\n\n")
         elif msg_type == MessageType.BOT:
-            self.parent.chat_display.insert(tk.END, f"{sender}: ", tag)
+            prefix = "<< " if is_cyber else ""
+            self.parent.chat_display.insert(tk.END, f"{prefix}{sender}: ", tag)
             self.parent.chat_display.insert(tk.END, f"{message}\n\n")
         else:
             self.parent.chat_display.insert(tk.END, f"{sender}: ", tag)
@@ -329,7 +396,12 @@ class ChatView:
         return legacy_map.get(legacy_type, MessageType.SYSTEM)
         
     def clear_chat(self):
+        """Clear chat display"""
         self.parent.chat_display.config(state=tk.NORMAL)
         self.parent.chat_display.delete("1.0", tk.END)
         self.parent.chat_display.config(state=tk.DISABLED)
-        self.parent.logger.system("Chat cleared")
+        
+        # Message based on theme
+        is_cyber = self.parent.ui_builder.theme_manager.theme_name == "Cyber"
+        message = "✦ Chat cleared" if is_cyber else "Chat cleared"
+        self.parent.logger.system(message)

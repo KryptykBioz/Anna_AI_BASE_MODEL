@@ -1,10 +1,10 @@
 # ============================================================================
 # FILE: BASE/tools/internal/voice/pyttsx3_backend.py
-# FIXED: Import controls module directly to ensure live updates
+# FIXED: Enhanced debug logging to diagnose system TTS issues
 # ============================================================================
 
 """
-System Voice (pyttsx3) TTS Backend - FIXED VOLUME CONTROL
+System Voice (pyttsx3) TTS Backend - ENHANCED DIAGNOSTICS
 
 Key Fix: Import personality.controls directly rather than storing reference
 This ensures we always read the LIVE module-level variable that the GUI updates
@@ -35,23 +35,51 @@ class Pyttsx3Backend(TTSInterface):
         # DON'T store controls_module reference - import directly instead
         self._pyttsx3_available = self._test_availability()
         
-        
+        print("\n" + "="*70)
         print("PYTTSX3 BACKEND INITIALIZATION")
+        print("="*70)
+        
+        if self._pyttsx3_available:
+            print("[SUCCESS] pyttsx3 is available")
+        else:
+            print("[FAILED] pyttsx3 is NOT available")
+            return
         
         print("Volume control: Reading directly from personality.controls module")
         print("This ensures GUI slider changes apply immediately")
         
+        # Test volume reading
+        try:
+            import personality.controls as controls
+            volume = controls.VOICE_VOLUME
+            print(f"[SUCCESS] Successfully read VOICE_VOLUME: {volume:.2f} ({int(volume * 100)}%)")
+        except Exception as e:
+            print(f"[FAILED] Failed to read VOICE_VOLUME: {e}")
+        
+        print("="*70 + "\n")
     
     def _test_availability(self) -> bool:
         """Test if pyttsx3 is available and working"""
         try:
             import pyttsx3
+            print("[Test] Creating test pyttsx3 engine...")
             test_engine = pyttsx3.init()
-            test_engine.stop()
+            print("[Test] Test engine created successfully")
+            
+            # Test getting voices
+            voices = test_engine.getProperty('voices')
+            print(f"[Test] Found {len(voices)} available voices")
+            if voices:
+                print(f"[Test] Default voice: {voices[0].name}")
+            
+            # Clean up - DO NOT call stop()
             del test_engine
+            print("[Test] pyttsx3 test passed")
             return True
         except Exception as e:
             print(f"[Pyttsx3Backend] Not available: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def is_available(self) -> bool:
@@ -81,41 +109,57 @@ class Pyttsx3Backend(TTSInterface):
             return "Error: No text after cleaning"
         
         # CRITICAL FIX: Import controls module directly to get LIVE value
-        import personality.controls as controls
-        volume = controls.VOICE_VOLUME  # Read directly from module
+        print("\n[Pyttsx3Backend] Reading volume from controls module...")
+        try:
+            import personality.controls as controls
+            volume = controls.VOICE_VOLUME  # Read directly from module
+            print(f"[Pyttsx3Backend] Successfully read volume: {volume:.2f} ({int(volume * 100)}%)")
+        except Exception as e:
+            print(f"[Pyttsx3Backend] ERROR reading volume: {e}")
+            volume = 1.0  # Fallback
+            print(f"[Pyttsx3Backend] Using fallback volume: {volume}")
         
-        print(f"\n[Pyttsx3] Speaking with volume: {volume:.2f} ({int(volume * 100)}%)")
+        print(f"\n[Pyttsx3Backend] Speaking with volume: {volume:.2f} ({int(volume * 100)}%)")
+        print(f"[Pyttsx3Backend] Text: '{text[:50]}{'...' if len(text) > 50 else ''}'")
         
         try:
             # Import implementation function
             from BASE.tools.internal.voice.text_to_system_voice import speak_system_voice
             
             # Create fresh engine for this call (pyttsx3 requirement)
+            print("[Pyttsx3Backend] Creating fresh pyttsx3 engine...")
             import pyttsx3
             fresh_engine = pyttsx3.init()
+            print("[Pyttsx3Backend] Fresh engine created")
             
             # Speak with interruption support and volume
+            print(f"[Pyttsx3Backend] Calling speak_system_voice with volume={volume:.2f}...")
             result = speak_system_voice(
                 text=text,
                 engine=fresh_engine,
                 stop_event=stop_event,
                 volume=volume
             )
+            print(f"[Pyttsx3Backend] speak_system_voice returned: {result}")
             
             # Cleanup engine (don't call stop(), just delete)
             del fresh_engine
+            print("[Pyttsx3Backend] Engine cleaned up")
             
             # Normalize result
             if "completed" in result.lower() or "success" in result.lower():
+                print("[Pyttsx3Backend] Result: Speech completed successfully")
                 return "Speech completed"
             elif "interrupted" in result.lower():
+                print("[Pyttsx3Backend] Result: Speech was interrupted")
                 return "Interrupted"
             else:
+                print(f"[Pyttsx3Backend] Result: {result}")
                 return result
         
         except Exception as e:
-            import traceback
             print(f"\n[Pyttsx3Backend] EXCEPTION:")
+            import traceback
             traceback.print_exc()
             return f"Error: {e}"
     
@@ -141,7 +185,7 @@ class Pyttsx3Backend(TTSInterface):
             temp_engine = pyttsx3.init()
             voices = temp_engine.getProperty('voices')
             current = temp_engine.getProperty('voice')
-            temp_engine.stop()
+            # Don't call stop() - just delete
             del temp_engine
             
             # FIXED: Read volume directly from module

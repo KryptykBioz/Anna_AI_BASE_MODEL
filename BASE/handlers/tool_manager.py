@@ -496,6 +496,7 @@ class ToolManager:
             if self.logger:
                 self.logger.error(f"[{tool_name}] Error: {error_msg}")
     
+
     def _inject_result(
         self,
         result: Dict[str, Any],
@@ -504,23 +505,26 @@ class ToolManager:
         success: bool,
         is_timeout: bool = False
     ):
-        """Inject tool result into thought buffer"""
+        """Inject tool result into thought buffer with tool-specific priority"""
         from BASE.core.thought_buffer import Priority
         
         content = result.get('content', '')
         
+        # Get tool-specific priority from metadata
+        tool_priority = self._get_tool_priority(tool_name)
+        
         if success:
             thought_content = f"[{tool_name}] SUCCESS: {content}"
             source = 'tool_result'
-            priority = Priority.MEDIUM
+            priority = tool_priority  # Use tool's priority from information.json
         elif is_timeout:
             thought_content = f"[{tool_name}] TIMEOUT: {content}"
             source = 'tool_timeout'
-            priority = Priority.HIGH
+            priority = Priority.MEDIUM  # Timeouts are always high priority
         else:
             thought_content = f"[{tool_name}] FAILED: {content}"
             source = 'tool_failed'
-            priority = Priority.HIGH
+            priority = Priority.MEDIUM  # Failures are always high priority
         
         thought_buffer.add_processed_thought(
             content=thought_content,
@@ -528,7 +532,48 @@ class ToolManager:
             original_ref=str(result),
             priority_override=priority
         )
-    
+
+    def _get_tool_priority(self, tool_name: str) -> str:
+        """
+        Get priority level from tool's information.json
+        
+        Args:
+            tool_name: Name of tool
+            
+        Returns:
+            Priority string ([LOW], [MEDIUM], [HIGH], [CRITICAL])
+        """
+        from BASE.core.thought_buffer import Priority
+        
+        # Get tool metadata
+        all_metadata = self.lifecycle_manager.get_all_metadata()
+        metadata = all_metadata.get(tool_name)
+        
+        if not metadata:
+            # Tool not found - default to MEDIUM
+            return Priority.MEDIUM
+        
+        # Get priority from metadata (which contains full information.json)
+        tool_info = metadata.get('metadata', {})
+        priority_str = tool_info.get('priority', 'MEDIUM').upper()
+        
+        # Map string priority to Priority constant
+        priority_map = {
+            'CRITICAL': Priority.CRITICAL,
+            'HIGH': Priority.HIGH,
+            'MEDIUM': Priority.MEDIUM,
+            'LOW': Priority.LOW
+        }
+        
+        result_priority = priority_map.get(priority_str, Priority.MEDIUM)
+        
+        if self.logger:
+            self.logger.system(
+                f"[Tool Priority] {tool_name}: {priority_str} → {result_priority}"
+            )
+        
+        return result_priority
+
     # ========================================================================
     # PROMPT GENERATION
     # ========================================================================
@@ -590,10 +635,20 @@ class ToolManager:
             "```",
             "",
             "**Guidelines:**",
-            "- Instructions remain valid for 6 minutes after retrieval",
-            "- Requesting instructions again resets the 6-minute timer",
-            "- You can use the tool multiple times within the 6-minute window",
-            "- Retrieve up to 3 tool instructions per prompt"
+            "- Retrieve up to 3 tool instructions per prompt",
+            "- Only request instructions for the available tools listed above",
+            "- Attempting to use a tool without first retrieving that tool's instructions will result in an error",
+            "- If tools are available, use them often when relevant to the situation",
+            "- Do not hesitate to retrieve instructions multiple times if needed",
+            "- Do not request clarifications about tool usage from the user or ask for more instructions from the user",
+            "",
+            "Examples:",
+            "A tool instruction retrieval action for the 'wiki_search' tool would look like:",
+            "```xml",
+            "<action_list>[",
+            '{"tool": "instructions", "args": ["wiki_search"]}',
+            "]</action_list>",
+            "```",
         ])
         
         return "\n".join(lines)

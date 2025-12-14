@@ -44,14 +44,6 @@ AUTO_RESPOND_INTERVAL = 60        # Time interval (seconds) to trigger auto-resp
 VOICE_VOLUME = 1.0              # Set TTS voice volume (1.0 = 100%)
 SOUND_EFFECT_VOLUME = 1.0       # Set sound effects volume (1.0 = 100%)
 
-# === CORE TOOLS ===
-# USE_SEARCH = False              # Enable web search functionality
-# MAX_SEARCH_RESULTS = 1          # Max web search results to include
-# USE_VISION = False              # Enable computer vision/screenshot analysis
-# USE_CODING = False              # Enable VS Code extension integration for code editing
-# USE_GOALS = False               # Enable goal-oriented behavior
-# AI_TOOLS = False                 # Enable AI tool usage (web search, vision, coding). False uses trigger words only.   
-
 # === MEMORY CONTEXT ===
 USE_BASE_MEMORY = False         # Use BASE memory system (document embeddings)
 USE_LONG_MEMORY = False         # Use long-term memory context (embedded conversation summaries of past days)
@@ -66,20 +58,9 @@ MEMORY_LENGTH = 25             # Number of recent interactions to keep
 MAX_LONG_TERM_MEMORIES = 1
 MAX_BASE_MEMORIES = 1
 
-# Reminder System
-# USE_REMINDERS = False           # Enable reminder/timer functionality
-# REMINDER_CHECK_INTERVAL = 600  # Seconds between reminder checks
-# REMINDER_PROACTIVE_MENTION = False  # Mention upcoming reminders naturally
-
-
 # === AVATAR ABILITIES ===
-# AVATAR_ANIMATIONS = False       # Trigger avatar animations from responses
 AVATAR_SPEECH = False           # Enable text-to-speech output
 USE_CUSTOM_VOICE = False       # Use custom voice model instead of standard system TTS (requires AVATAR_SPEECH enabled)
-
-# # Sound Effects
-# USE_SOUND_EFFECTS = False
-# SOUND_EFFECTS_DIR = "./BASE/tools/sounds/effects"  # Path to your .mp3 files
 
 # === GROUP CHAT CONTEXT ===
 IN_DISCORD_CHAT = False        # Enable Discord chat integration
@@ -123,7 +104,6 @@ PLAYING_GAME = False  # Auto-set to True when ANY game is selected
 # Individual Game Controls (only one can be True at a time)
 PLAYING_MINECRAFT = False
 PLAYING_LEAGUE = False
-# PLAYING_VALORANT = False  # Future games
 
 # === INTELLIGENT TOOL USE ===
 INTELLIGENT_TOOL_SELECTION = False

@@ -198,11 +198,6 @@ class AICore:
         """Inject TTS tool"""
         self.tts_tool = tts_tool
         
-        if hasattr(self, 'processing_delegator'):
-            response_gen = self.processing_delegator.response_generator
-            if hasattr(response_gen, 'set_tts_tool'):
-                response_gen.set_tts_tool(tts_tool)
-        
         if tts_tool.is_available():
             info = tts_tool.get_voice_info()
             self.logger.speech(f"TTS tool connected: {info.get('name', 'Unknown')}")

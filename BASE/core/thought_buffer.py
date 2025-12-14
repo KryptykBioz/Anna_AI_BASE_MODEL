@@ -21,7 +21,7 @@ import time
 from typing import List, Dict, Tuple, Optional, Deque, Any 
 from collections import deque
 from dataclasses import dataclass, field
-import datetime
+from datetime import datetime
 
 from personality.bot_info import agentname, username
 
@@ -32,8 +32,8 @@ from personality.bot_info import agentname, username
 
 class Priority:
     """
-    String-based priority system for thought classification.
-    Uses descriptive tags instead of numeric values for clarity.
+    String-based priority system with metadata formatting.
+    Format: [TIMESTAMP] [SOURCE] [PRIORITY] content
     """
     LOW = "[LOW]"
     MEDIUM = "[MEDIUM]"
@@ -42,7 +42,7 @@ class Priority:
     
     @staticmethod
     def to_numeric(priority: str) -> int:
-        """Convert priority tag to numeric for internal comparisons only."""
+        """Convert priority tag to numeric for internal comparisons."""
         mapping = {
             "[LOW]": 1,
             "[MEDIUM]": 5,
@@ -81,16 +81,50 @@ class Priority:
             'chat_engagement': Priority.MEDIUM
         }
         return priority_map.get(source, Priority.MEDIUM)
-
-
-# ============================================================================
-# DATA STRUCTURES
-# ============================================================================
-
-def _format_timestamp(timestamp: float) -> str:
-    """Format timestamp for context display."""
-    dt_object = datetime.datetime.fromtimestamp(timestamp)
-    return dt_object.strftime("[%A, %B %d, %Y at %I:%M:%S %p]")
+    
+    @staticmethod
+    def format_timestamp(timestamp: Optional[float] = None) -> str:
+        """Format timestamp for thought display."""
+        if timestamp:
+            dt = datetime.fromtimestamp(timestamp)
+        else:
+            dt = datetime.now()
+        return dt.strftime("[%H:%M:%S]")
+    
+    @staticmethod
+    def format_source(source: str) -> str:
+        """Format source tag for display."""
+        source_map = {
+            'user_input': 'USER',
+            'chat_message': 'CHAT',
+            'chat_direct_mention': 'CHAT',
+            'chat_question': 'CHAT',
+            'direct_mention': 'USER',
+            'tool_result': 'TOOL',
+            'tool_failed': 'TOOL',
+            'tool_timeout': 'TOOL',
+            'vision_result': 'VISION',
+            'search_result': 'SEARCH',
+            'memory_result': 'MEMORY',
+            'urgent_reminder': 'REMINDER',
+            'response_echo': 'SELF',
+            'proactive_reflection': 'THOUGHT',
+            'internal': 'THOUGHT'
+        }
+        formatted = source_map.get(source, source.upper()[:8])
+        return f"[{formatted}]"
+    
+    @staticmethod
+    def format_thought_with_metadata(content: str, source: str, priority: str, 
+                                     timestamp: Optional[float] = None) -> str:
+        """
+        Format thought with full metadata prefix.
+        Format: [TIMESTAMP] [SOURCE] [PRIORITY] content
+        Example: [19:24:04] [USER] [HIGH] Hello, Anna.
+        """
+        time_str = Priority.format_timestamp(timestamp)
+        source_str = Priority.format_source(source)
+        return f"{time_str} {source_str} {priority} {content}"
 
 
 @dataclass
@@ -226,9 +260,17 @@ class ThoughtBuffer:
         """
         if timestamp is None:
             timestamp = time.time()
-            
-        echo_thought = ProcessedThought(
+        
+        # Format with metadata
+        formatted_content = Priority.format_thought_with_metadata(
             content=response_text,
+            source='response_echo',
+            priority=Priority.LOW,
+            timestamp=timestamp
+        )
+        
+        echo_thought = ProcessedThought(
+            content=formatted_content,
             source='response_echo',
             timestamp=timestamp,
             priority=Priority.LOW,
@@ -424,16 +466,19 @@ class ThoughtBuffer:
         content: str, 
         source: str, 
         original_ref: str = None,
-        priority_override: Optional[str] = None
+        priority_override: Optional[str] = None,
+        timestamp: Optional[float] = None
     ):
         """
-        Add interpreted thought with priority.
+        Add interpreted thought with priority metadata.
+        Automatically formats with [TIMESTAMP] [SOURCE] [PRIORITY] prefix.
         
         Args:
-            content: Thought text
+            content: Thought text (raw, will be formatted)
             source: Event source type
             original_ref: Original event data
-            priority_override: Override priority ([LOW], [MEDIUM], [HIGH], [CRITICAL])
+            priority_override: Override priority tag
+            timestamp: Optional timestamp (defaults to current time)
         """
         # Determine priority
         if priority_override and priority_override in [
@@ -448,10 +493,22 @@ class ThoughtBuffer:
             self.has_urgent_reminders = True
             self.urgent_reminder_count += 1
         
-        self._thoughts.append(ProcessedThought(
+        # Use provided timestamp or current time
+        if timestamp is None:
+            timestamp = time.time()
+        
+        # FORMAT WITH METADATA PREFIX
+        formatted_content = Priority.format_thought_with_metadata(
             content=content,
             source=source,
-            timestamp=time.time(),
+            priority=priority,
+            timestamp=timestamp
+        )
+        
+        self._thoughts.append(ProcessedThought(
+            content=formatted_content,  # Store formatted version
+            source=source,
+            timestamp=timestamp,
             priority=priority,
             original_ref=original_ref,
             spoken_in_response=False

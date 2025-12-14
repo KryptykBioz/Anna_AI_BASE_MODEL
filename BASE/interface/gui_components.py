@@ -85,113 +85,182 @@ class ControlPanelManager:
             self.tts_backend_switcher = None
 
     def toggle_control(self, var_name):
-        """Toggle a control via AI Core"""
-        # Handle custom voice switching
-        if var_name == "USE_CUSTOM_VOICE":
-            if not getattr(controls, 'AVATAR_SPEECH', False):
-                self.logger.warning("Enable AVATAR_SPEECH first")
-                return
+            """Toggle a control via AI Core"""
             
-            if not self.tts_backend_switcher:
-                self.logger.error("TTS backend switcher not initialized")
-                self.logger.error("Recommendation: Restart application")
-                return
-            
-            if not self.tts_backend_switcher.controls_module:
-                self.logger.error("TTS backend switcher missing controls module")
-                return
-            
-            # Get new value from toggle
-            new_value = self.ai_core.control_manager.toggle_feature(var_name)
-    
-            if new_value is None:
-                self.logger.error("Failed to toggle USE_CUSTOM_VOICE")
-                return
-            
-            # Update GUI controls BEFORE switching backend
-            self.control_vars[var_name].set(new_value)
-            self.status_labels[var_name].config(
-                text="ON" if new_value else "OFF",
-                foreground=DarkTheme.ACCENT_GREEN if new_value else DarkTheme.FG_MUTED,
-            )
-            
-            # Determine backend name
-            backend_name = "Custom Voice (XTTS)" if new_value else "System Voice (pyttsx3)"
-            
-            self.logger.speech(f"Switching to {backend_name}...")
-            
-            # Perform backend switch
-            success = self.tts_backend_switcher.switch_backend(new_value)
-            
-            if success:
+            # ====================================================================
+            # SPECIAL CASE 1: AVATAR_SPEECH Toggle
+            # ====================================================================
+            if var_name == "AVATAR_SPEECH":
+                # Toggle the control
+                new_value = self.ai_core.control_manager.toggle_feature(var_name)
+                
+                if new_value is None:
+                    self.logger.error("Failed to toggle AVATAR_SPEECH")
+                    return
+                
+                # Update GUI immediately
+                self.control_vars[var_name].set(new_value)
+                self.status_labels[var_name].config(
+                    text="ON" if new_value else "OFF",
+                    foreground=DarkTheme.ACCENT_GREEN if new_value else DarkTheme.FG_MUTED,
+                )
+                
+                # If enabling, check if TTS tool exists and is available
+                if new_value:
+                    if not hasattr(self.ai_core, 'tts_tool') or not self.ai_core.tts_tool:
+                        self.logger.error("[FAILED] TTS tool not initialized")
+                        self.logger.error("   Recommendation: Restart application with AVATAR_SPEECH enabled")
+                        self.logger.error("   Or ensure _setup_tts_tool() initializes even when disabled")
+                        
+                        # Revert GUI change
+                        self.control_vars[var_name].set(False)
+                        self.status_labels[var_name].config(
+                            text="OFF",
+                            foreground=DarkTheme.FG_MUTED,
+                        )
+                        setattr(controls, var_name, False)
+                        return
+                    
+                    # Check TTS availability
+                    if not self.ai_core.tts_tool.is_available():
+                        self.logger.error("[FAILED] TTS tool exists but is not available")
+                        
+                        # Revert
+                        self.control_vars[var_name].set(False)
+                        self.status_labels[var_name].config(
+                            text="OFF",
+                            foreground=DarkTheme.FG_MUTED,
+                        )
+                        setattr(controls, var_name, False)
+                        return
+                    
+                    # Success - TTS enabled
+                    info = self.ai_core.tts_tool.get_voice_info()
+                    self.logger.speech(f"[SUCCESS] TTS enabled: {info.get('name')} ({info.get('type')})")
+                    if 'volume_percent' in info:
+                        self.logger.speech(f"  Volume: {info['volume_percent']}")
+                else:
+                    # TTS disabled
+                    self.logger.speech("[INFO] TTS disabled")
+                
                 # Update controls module
                 setattr(controls, var_name, new_value)
                 
-                # self.logger.speech(f"[SUCCESS] Successfully switched to: {backend_name}")
+                # Notify tool manager
+                if hasattr(self.ai_core, 'tool_manager'):
+                    self.ai_core.tool_manager.handle_control_update(var_name, new_value)
                 
-                # Log backend info
-                if hasattr(self.ai_core, 'tts_tool') and self.ai_core.tts_tool:
-                    info = self.ai_core.tts_tool.get_voice_info()
-                    self.logger.speech(f"  Active backend: {info.get('name', 'Unknown')}")
+                return
+            
+            # ====================================================================
+            # SPECIAL CASE 2: USE_CUSTOM_VOICE Toggle
+            # ====================================================================
+            if var_name == "USE_CUSTOM_VOICE":
+                if not getattr(controls, 'AVATAR_SPEECH', False):
+                    self.logger.warning("Enable AVATAR_SPEECH first")
+                    return
+                
+                if not self.tts_backend_switcher:
+                    self.logger.error("TTS backend switcher not initialized")
+                    self.logger.error("Recommendation: Restart application")
+                    return
+                
+                if not self.tts_backend_switcher.controls_module:
+                    self.logger.error("TTS backend switcher missing controls module")
+                    return
+                
+                # Get new value from toggle
+                new_value = self.ai_core.control_manager.toggle_feature(var_name)
+        
+                if new_value is None:
+                    self.logger.error("Failed to toggle USE_CUSTOM_VOICE")
+                    return
+                
+                # Update GUI controls BEFORE switching backend
+                self.control_vars[var_name].set(new_value)
+                self.status_labels[var_name].config(
+                    text="ON" if new_value else "OFF",
+                    foreground=DarkTheme.ACCENT_GREEN if new_value else DarkTheme.FG_MUTED,
+                )
+                
+                # Determine backend name
+                backend_name = "Custom Voice (XTTS)" if new_value else "System Voice (pyttsx3)"
+                
+                self.logger.speech(f"Switching to {backend_name}...")
+                
+                # Perform backend switch
+                success = self.tts_backend_switcher.switch_backend(new_value)
+                
+                if success:
+                    # Update controls module
+                    setattr(controls, var_name, new_value)
                     
-                    if 'volume_percent' in info:
-                        self.logger.speech(f"  Volume: {info['volume_percent']}")
+                    # Log backend info
+                    if hasattr(self.ai_core, 'tts_tool') and self.ai_core.tts_tool:
+                        info = self.ai_core.tts_tool.get_voice_info()
+                        self.logger.speech(f"  Active backend: {info.get('name', 'Unknown')}")
+                        
+                        if 'volume_percent' in info:
+                            self.logger.speech(f"  Volume: {info['volume_percent']}")
+                        
+                        if hasattr(self, 'tts_status_label'):
+                            self.tts_status_label.config(
+                                text=f"Status: Ready ({info.get('type', 'Unknown')})",
+                                foreground=DarkTheme.ACCENT_GREEN
+                            )
+                else:
+                    # Backend switch failed - revert GUI
+                    self.control_vars[var_name].set(not new_value)
+                    self.status_labels[var_name].config(
+                        text="ON" if (not new_value) else "OFF",
+                        foreground=DarkTheme.ACCENT_GREEN if (not new_value) else DarkTheme.FG_MUTED,
+                    )
+                    
+                    self.logger.error(f"Failed to switch to {backend_name}")
                     
                     if hasattr(self, 'tts_status_label'):
                         self.tts_status_label.config(
-                            text=f"Status: Ready ({info.get('type', 'Unknown')})",
-                            foreground=DarkTheme.ACCENT_GREEN
+                            text="Status: Switch Failed",
+                            foreground=DarkTheme.ACCENT_RED
                         )
-            else:
-                # Backend switch failed - revert GUI
-                self.control_vars[var_name].set(not new_value)
-                self.status_labels[var_name].config(
-                    text="ON" if (not new_value) else "OFF",
-                    foreground=DarkTheme.ACCENT_GREEN if (not new_value) else DarkTheme.FG_MUTED,
-                )
                 
-                self.logger.error(f"Failed to switch to {backend_name}")
-                
-                if hasattr(self, 'tts_status_label'):
-                    self.tts_status_label.config(
-                        text="Status: Switch Failed",
-                        foreground=DarkTheme.ACCENT_RED
+                # Notify tool manager
+                if hasattr(self.ai_core, 'tool_manager'):
+                    self.ai_core.tool_manager.handle_control_update(
+                        var_name, new_value if success else (not new_value)
                     )
+                
+                return
             
-            # Notify tool manager
-            if hasattr(self.ai_core, 'tool_manager'):
-                self.ai_core.tool_manager.handle_control_update(
-                    var_name, new_value if success else (not new_value)
+            # ====================================================================
+            # REGULAR CONTROLS: Standard Toggle Logic
+            # ====================================================================
+            new_value = self.ai_core.control_manager.toggle_feature(var_name)
+            
+            if new_value is not None:
+                self.control_vars[var_name].set(new_value)
+                self.status_labels[var_name].config(
+                    text="ON" if new_value else "OFF",
+                    foreground=DarkTheme.ACCENT_GREEN if new_value else DarkTheme.FG_MUTED,
                 )
-            
-            return
-        
-        # Regular toggle for other controls
-        new_value = self.ai_core.control_manager.toggle_feature(var_name)
-        
-        if new_value is not None:
-            self.control_vars[var_name].set(new_value)
-            self.status_labels[var_name].config(
-                text="ON" if new_value else "OFF",
-                foreground=DarkTheme.ACCENT_GREEN if new_value else DarkTheme.FG_MUTED,
-            )
 
-            # Notify tool execution manager of control change
-            if hasattr(self.ai_core, 'tool_manager'):
-                self.ai_core.tool_manager.handle_control_update(var_name, new_value)
-                if new_value:
-                    self.logger.system(f"{var_name} enabled")
-                else:
-                    self.logger.system(f"{var_name} disabled")
+                # Notify tool execution manager of control change
+                if hasattr(self.ai_core, 'tool_manager'):
+                    self.ai_core.tool_manager.handle_control_update(var_name, new_value)
+                    if new_value:
+                        self.logger.system(f"{var_name} enabled")
+                    else:
+                        self.logger.system(f"{var_name} disabled")
 
-            if var_name == "LIMIT_PROCESSING":
-                if new_value:
-                    delay = getattr(controls, 'DELAY_TIMER', 30)
-                    self.logger.system(f"Processing limited - {delay}s delay per cycle")
-                else:
-                    self.logger.system("Processing speed normal - adaptive pacing")
-        else:
-            self.logger.error(f"Failed to toggle control: {var_name}")
+                # Special logging for LIMIT_PROCESSING
+                if var_name == "LIMIT_PROCESSING":
+                    if new_value:
+                        delay = getattr(controls, 'DELAY_TIMER', 30)
+                        self.logger.system(f"Processing limited - {delay}s delay per cycle")
+                    else:
+                        self.logger.system("Processing speed normal - adaptive pacing")
+            else:
+                self.logger.error(f"Failed to toggle control: {var_name}")
 
     def create_control_panel(self, parent_frame):
         """Create comprehensive control panel with dynamic tools"""
@@ -266,9 +335,10 @@ class ControlPanelManager:
                 "Use AI model for semantic filtering")
             ],
             "Debug & Logging": [
-                ("Log Tools", "LOG_TOOL_EXECUTION", "Log tool executions"),
+                ("Log System", "LOG_SYSTEM_INFORMATION", "Log system messages"),
                 ("Log Prompts", "LOG_PROMPT_CONSTRUCTION", "Log prompt building"),
                 ("Log Responses", "LOG_RESPONSE_PROCESSING", "Log response generation"),
+                ("Log Tools", "LOG_TOOL_EXECUTION", "Log tool executions"),
                 ("Log Live Chat", "SHOW_CHAT", "Print live chat messages"),
             ],
         }

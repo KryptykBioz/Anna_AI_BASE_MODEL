@@ -24,12 +24,10 @@ try:
     from BASE.interface.voice_manager import VoiceManager
     from BASE.interface.gui_components import ControlPanelManager
     from BASE.interface.gui_session_files_panel import SessionFilesPanel
-    from BASE.interface.gui_themes import DarkTheme
     from BASE.interface.gui_message_processor import MessageProcessor
     from BASE.interface.gui_chat_handler import GUIMessageHandler
     from BASE.interface.gui_ui_builder import UIBuilder
     from BASE.interface.gui_chat_view import ChatView
-    from BASE.interface.gui_theme_manager import ThemeManager
 
 except ImportError as e:
     print(f"Error importing modules: {e}")
@@ -107,7 +105,7 @@ class OllamaGUI:
 
         # Setup external tools
         self._setup_tts_tool()
-        self._setup_integrations()
+        # self._setup_integrations()
 
         # GUI-specific components
         import queue
@@ -178,10 +176,12 @@ class OllamaGUI:
         self.processing_label = None
         self.system_log = None
 
+        # Setup external tools
+        self._setup_tts_tool()  # This will now initialize even if disabled
+        # self._setup_integrations()
+
         # Apply theme and setup GUI
-        from BASE.interface.gui_theme_manager import ThemeManager
-        theme_manager = ThemeManager(self)
-        theme_manager.apply_dark_theme()
+        # Note: Theme manager is now initialized in UIBuilder
         self.ui_builder.setup_gui()
 
         # Start queue processor
@@ -316,36 +316,31 @@ class OllamaGUI:
             return default
 
     def _setup_tts_tool(self):
-        """Setup TTS tool - LEGACY SYSTEM"""
-        if not controls.AVATAR_SPEECH:
-            self.logger.speech("Speech disabled in config")
-            self.tts_tool = None
-            return
-
+        """
+        Setup TTS tool - FIXED to initialize even when disabled
+        This allows runtime toggling without restart
+        """
         try:
             from personality.bot_info import agentname
             from BASE.tools.internal.voice.tts_tool import TTSTool
+            
+            # CRITICAL FIX: Always initialize backends, just don't use them if disabled
+            # This allows runtime toggling without restart
             
             use_custom = getattr(controls, 'USE_CUSTOM_VOICE', False)
             
             backend = None
             backend_type = None
             
+            # Try to initialize the appropriate backend
             if use_custom:
-                self.logger.speech("[VOICE]  Attempting XTTS custom voice cloning")
+                self.logger.speech("[VOICE] Attempting XTTS custom voice cloning")
                 
                 try:
-                    try:
-                        import torch
-                        self.logger.speech(f"[SUCCESS] PyTorch detected: {torch.__version__}")
-                        if torch.cuda.is_available():
-                            self.logger.speech(f"[SUCCESS] CUDA available: {torch.cuda.get_device_name(0)}")
-                    except ImportError as e:
-                        raise RuntimeError(
-                            "PyTorch not found. XTTS requires PyTorch.\n"
-                            "Install with: pip install torch torchvision torchaudio "
-                            "--index-url https://download.pytorch.org/whl/cu126"
-                        )
+                    import torch
+                    self.logger.speech(f"[SUCCESS] PyTorch detected: {torch.__version__}")
+                    if torch.cuda.is_available():
+                        self.logger.speech(f"[SUCCESS] CUDA available: {torch.cuda.get_device_name(0)}")
                     
                     from BASE.tools.internal.voice.xtts_backend import XTTSBackend
                     
@@ -358,7 +353,8 @@ class OllamaGUI:
                         voice_sample_path=voice_path,
                         language='en',
                         speed=1.0,
-                        controls_module=controls
+                        controls_module=controls,
+                        precompute_embeddings=True  # Precompute for faster first use
                     )
                     
                     if not backend.is_available():
@@ -371,42 +367,56 @@ class OllamaGUI:
                     self.logger.error(f"XTTS initialization failed: {e}")
                     import traceback
                     traceback.print_exc()
-                    self.logger.speech("[WARNING]  Falling back to system voice (pyttsx3)")
+                    self.logger.speech("[WARNING] Falling back to system voice (pyttsx3)")
                     backend = None
                     backend_type = None
                     setattr(controls, 'USE_CUSTOM_VOICE', False)
             
+            # CRITICAL FIX: Always try to create system voice backend as fallback
             if backend is None:
-                self.logger.speech("[SOUND]  Using system voice (pyttsx3)")
+                self.logger.speech("[SOUND] Initializing system voice (pyttsx3)")
                 
                 from BASE.tools.internal.voice.pyttsx3_backend import Pyttsx3Backend
                 
                 backend = Pyttsx3Backend(controls_module=controls)
                 backend_type = "pyttsx3"
                 
-                volume = getattr(controls, 'VOICE_VOLUME', 1.0)
-                self.logger.speech(f"pyttsx3 created with volume: {int(volume * 100)}%")
+                if backend.is_available():
+                    volume = getattr(controls, 'VOICE_VOLUME', 1.0)
+                    self.logger.speech(f"[SUCCESS] pyttsx3 created with volume: {int(volume * 100)}%")
+                else:
+                    self.logger.error("[FAILED] pyttsx3 backend not available")
+                    self.tts_tool = None
+                    return
             
+            # Create TTS tool
             tts_tool = TTSTool(backend, self.logger)
             
+            # Inject into AI Core
             self.ai_core.setup_tts_tool(tts_tool)
             
+            # Store reference
             self.tts_tool = tts_tool
             
-            if tts_tool.is_available():
-                info = tts_tool.get_voice_info()
-                volume = getattr(controls, 'VOICE_VOLUME', 1.0)
-                self.logger.speech(
-                    f"[SUCCESS] TTS ready: {info.get('name', 'Unknown')} "
-                    f"({info.get('type', 'Unknown')}) - Volume: {int(volume * 100)}%"
-                )
-                
-                if backend_type == "XTTS" and info.get('device'):
-                    self.logger.speech(f"  Device: {info['device']}")
+            # Log status based on whether speech is enabled
+            if controls.AVATAR_SPEECH:
+                if tts_tool.is_available():
+                    info = tts_tool.get_voice_info()
+                    volume = getattr(controls, 'VOICE_VOLUME', 1.0)
+                    self.logger.speech(
+                        f"[SUCCESS] TTS ready: {info.get('name', 'Unknown')} "
+                        f"({info.get('type', 'Unknown')}) - Volume: {int(volume * 100)}%"
+                    )
+                    
+                    if backend_type == "XTTS" and info.get('device'):
+                        self.logger.speech(f"  Device: {info['device']}")
+                else:
+                    self.logger.error("[FAILED] TTS not available after initialization")
+                    self.tts_tool = None
             else:
-                self.logger.error("[FAILED]  TTS not available after initialization")
-                self.tts_tool = None
-
+                # TTS initialized but disabled
+                self.logger.speech("[INFO] TTS initialized but disabled (toggle AVATAR_SPEECH to enable)")
+        
         except Exception as e:
             self.logger.error(f"Critical TTS setup failure: {e}")
             import traceback
@@ -443,77 +453,77 @@ class OllamaGUI:
                 self._gui_log_callback(message, msg_type, color)
             del self._pending_log_messages
 
-    def _setup_integrations(self):
-        """Initialize optional integrations - LEGACY (passive context)"""
-        from BASE.tools.internal.chat.twitch_chat_direct import TwitchIntegration
-        from BASE.tools.internal.chat.youtube_chat_direct import YouTubeIntegration
+    # def _setup_integrations(self):
+        # """Initialize optional integrations - LEGACY (passive context)"""
+        # from BASE.tools.internal.chat.twitch_chat_direct import TwitchIntegration
+        # from BASE.tools.internal.chat.youtube_chat_direct import YouTubeIntegration
 
-        twitch_channel = self._config_get("TWITCH_CHANNEL")
-        twitch_token = self._config_get("TWITCH_OAUTH_TOKEN")
-        twitch_nick = self._config_get("agentname", getattr(self, 'agentname', None)) or getattr(self.config, 'agentname', None) or getattr(self, 'agentname', agentname)
+        # twitch_channel = self._config_get("TWITCH_CHANNEL")
+        # twitch_token = self._config_get("TWITCH_OAUTH_TOKEN")
+        # twitch_nick = self._config_get("agentname", getattr(self, 'agentname', None)) or getattr(self.config, 'agentname', None) or getattr(self, 'agentname', agentname)
 
-        if twitch_channel and twitch_token:
-            try:
-                self.twitch_chat = TwitchIntegration(
-                    channel=twitch_channel,
-                    oauth_token=twitch_token,
-                    nickname=twitch_nick,
-                    max_context_messages=10,
-                    gui_logger=self._gui_log_callback,
-                    ai_core=self.ai_core
-                )
-                self.logger.system("Twitch Integration Initialized")
-            except Exception as e:
-                self.logger.error(f"Failed initializing Twitch integration: {e}")
+        # if twitch_channel and twitch_token:
+        #     try:
+        #         self.twitch_chat = TwitchIntegration(
+        #             channel=twitch_channel,
+        #             oauth_token=twitch_token,
+        #             nickname=twitch_nick,
+        #             max_context_messages=10,
+        #             gui_logger=self._gui_log_callback,
+        #             ai_core=self.ai_core
+        #         )
+        #         self.logger.system("Twitch Integration Initialized")
+        #     except Exception as e:
+        #         self.logger.error(f"Failed initializing Twitch integration: {e}")
 
-        youtube_video_id = self._config_get("YOUTUBE_VIDEO_ID")
-        if youtube_video_id:
-            try:
-                self.youtube_chat = YouTubeIntegration(
-                    video_id=youtube_video_id,
-                    max_context_messages=10,
-                    ai_core=self.ai_core
-                )
-                self.logger.system("YouTube Integration Initialized")
-            except Exception as e:
-                self.logger.error(f"Failed initializing YouTube integration: {e}")
+        # youtube_video_id = self._config_get("YOUTUBE_VIDEO_ID")
+        # if youtube_video_id:
+        #     try:
+        #         self.youtube_chat = YouTubeIntegration(
+        #             video_id=youtube_video_id,
+        #             max_context_messages=10,
+        #             ai_core=self.ai_core
+        #         )
+        #         self.logger.system("YouTube Integration Initialized")
+        #     except Exception as e:
+        #         self.logger.error(f"Failed initializing YouTube integration: {e}")
 
-    def _initialize_discord(self):
-        """Initialize Discord integration"""
-        try:
-            if hasattr(self.ai_core, 'discord_integration') and self.ai_core.discord_integration:
-                self.logger.discord("Discord already initialized in AI Core")
-                return
+    # def _initialize_discord(self):
+    #     """Initialize Discord integration"""
+    #     try:
+    #         if hasattr(self.ai_core, 'discord_integration') and self.ai_core.discord_integration:
+    #             self.logger.discord("Discord already initialized in AI Core")
+    #             return
             
-            if not self.config.discord_enabled:
-                self.logger.discord("Enabling Discord for initialization")
-                self.config.discord_enabled = True
+    #         if not self.config.discord_enabled:
+    #             self.logger.discord("Enabling Discord for initialization")
+    #             self.config.discord_enabled = True
             
-            self.ai_core._init_discord()
+    #         self.ai_core._init_discord()
             
-            if not hasattr(self.ai_core, 'discord_integration') or not self.ai_core.discord_integration:
-                raise Exception("Discord integration not created by AI Core")
+    #         if not hasattr(self.ai_core, 'discord_integration') or not self.ai_core.discord_integration:
+    #             raise Exception("Discord integration not created by AI Core")
             
-            if hasattr(self.ai_core, 'chat_handler') and self.ai_core.chat_handler:
-                success = self.ai_core.chat_handler.register_platform(
-                    platform_name="Discord",
-                    integration_instance=self.ai_core.discord_integration,
-                    auto_start=False
-                )
-                if success:
-                    self.logger.discord("Discord registered with chat handler")
-                else:
-                    self.logger.error("Failed to register Discord with chat handler")
-            else:
-                self.logger.warning("Chat handler not available")
+    #         if hasattr(self.ai_core, 'chat_handler') and self.ai_core.chat_handler:
+    #             success = self.ai_core.chat_handler.register_platform(
+    #                 platform_name="Discord",
+    #                 integration_instance=self.ai_core.discord_integration,
+    #                 auto_start=False
+    #             )
+    #             if success:
+    #                 self.logger.discord("Discord registered with chat handler")
+    #             else:
+    #                 self.logger.error("Failed to register Discord with chat handler")
+    #         else:
+    #             self.logger.warning("Chat handler not available")
             
-            self.logger.discord("Discord initialization complete")
+    #         self.logger.discord("Discord initialization complete")
             
-        except Exception as e:
-            self.logger.error(f"Failed to initialize Discord: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+    #     except Exception as e:
+    #         self.logger.error(f"Failed to initialize Discord: {e}")
+    #         import traceback
+    #         traceback.print_exc()
+    #         raise
 
     def handle_autonomous_response(self, response: str):
         """Handle autonomous responses from cognitive loop"""

@@ -231,7 +231,7 @@ class VoiceManager:
         controls.VOICE_VOLUME = volume
         if self.voice_volume_label:
             self.voice_volume_label.config(text=f"{int(value)}%")
-        self.logger.speech(f"Voice volume: {int(value)}%")
+        # self.logger.speech(f"Voice volume: {int(value)}%")
     
     def _on_sound_volume_change(self, value):
         """Handle sound effects volume slider change"""
@@ -240,7 +240,7 @@ class VoiceManager:
         controls.SOUND_EFFECT_VOLUME = volume
         if self.sound_volume_label:
             self.sound_volume_label.config(text=f"{int(value)}%")
-        self.logger.system(f"Sound effects volume: {int(value)}%")
+        # self.logger.system(f"Sound effects volume: {int(value)}%")
 
     def toggle_voice_input(self):
         """Toggle GPU-accelerated voice input on/off"""
@@ -465,11 +465,11 @@ class VolumeControlPanel:
         self.controls.VOICE_VOLUME = volume
         if self.voice_volume_label:
             self.voice_volume_label.config(text=f"{int(value)}%")
-        self.logger.speech(f"Voice volume: {int(value)}%")
+        # self.logger.speech(f"Voice volume: {int(value)}%")
     
     def _on_sound_volume_change(self, value):
         volume = int(value) / 100.0
         self.controls.SOUND_EFFECT_VOLUME = volume
         if self.sound_volume_label:
             self.sound_volume_label.config(text=f"{int(value)}%")
-        self.logger.system(f"Sound effects volume: {int(value)}%")
+        # self.logger.system(f"Sound effects volume: {int(value)}%")

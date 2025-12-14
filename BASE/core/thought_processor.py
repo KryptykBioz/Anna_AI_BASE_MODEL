@@ -1,7 +1,9 @@
 # Filename: BASE/core/thought_processor.py
 """
-Enhanced Thought Processor - Core Orchestration
-All urgency_override → priority_override
+Thought Processor - REFACTORED for Modular Prompt System
+========================================================
+Uses new response_decider + modular constructors
+Removed old ThoughtPromptBuilder completely
 """
 import json
 import time
@@ -12,9 +14,14 @@ from dataclasses import dataclass, asdict
 import re
 
 from BASE.core.thought_buffer import ThoughtBuffer
-# from BASE.core.constructors.thought_response_parser import ThoughtResponseParser
 from BASE.core.logger import Logger
 from BASE.core.thinking_modes import ThinkingModes
+
+# NEW: Import response decider and constructors
+from BASE.core.response_decider import ResponseDecider, PromptType
+from BASE.core.responsive.responsive_constructor import ResponsiveConstructor
+from BASE.core.reflective.reflective_constructor import ReflectiveConstructor
+from BASE.core.planning.planning_constructor import PlanningConstructor
 
 from personality.bot_info import username
 
@@ -41,18 +48,19 @@ class ThoughtState:
 
 class ThoughtProcessor:
     """
-    Core thought processor with continuous cognitive loop
-    Uses tool_manager for all tool operations
+    Core thought processor with modular prompt construction
+    NEW: Uses ResponseDecider to choose constructor
     """
     __slots__ = (
         'config', 'controls', 'project_root', 'memory_search',
-        'session_file_manager', 'prompt_builder', 'logger', 'thought_buffer',
-        'parser', '_is_processing', '_last_memory_integration',
-        '_thought_cache', '_cache_dirty', 'cognitive_loop', 'event_loop',
-        '_ai_core_ref',
-        'thinking_modes', 'action_state_manager',
-        'tool_manager',
-        '_last_tool_exploration'
+        'session_file_manager', 'logger', 'thought_buffer',
+        '_is_processing', '_last_memory_integration',
+        'cognitive_loop', 'event_loop', '_ai_core_ref',
+        'thinking_modes', 'action_state_manager', 'tool_manager',
+        '_last_tool_exploration',
+        # NEW: Modular prompt system
+        'response_decider', 'responsive_constructor',
+        'reflective_constructor', 'planning_constructor'
     )
     
     def __init__(
@@ -60,28 +68,43 @@ class ThoughtProcessor:
         memory_search=None, session_file_manager=None,
         gui_logger=None
     ):
-        """Initialize thought processor"""
+        """Initialize thought processor with modular prompt system"""
         self.config = config
         self.controls = controls_module
         self.project_root = project_root
         self.memory_search = memory_search
         self.session_file_manager = session_file_manager
         
-        # Create logger FIRST
+        # Create logger
         self.logger = Logger(name="ThoughtProcessor", gui_callback=gui_logger, config=config)
         
-        # Initialize prompt builder
-        from BASE.core.constructors.thought_prompt_builder import ThoughtPromptBuilder
+        # Initialize thought buffer
+        self.thought_buffer = ThoughtBuffer(max_thoughts=25)
         
-        self.prompt_builder = ThoughtPromptBuilder(
-            controls_module=controls_module,
-            memory_search=memory_search,
+        # NEW: Initialize modular prompt system
+        from personality.bot_info import agentname
+        
+        self.response_decider = ResponseDecider(
+            agentname=agentname,
+            username=username,
             logger=self.logger
         )
         
-        # Initialize other components
-        self.thought_buffer = ThoughtBuffer(max_thoughts=25)
-        # self.parser = ThoughtResponseParser()
+        self.responsive_constructor = ResponsiveConstructor(
+            tool_manager=None,  # Injected later
+            logger=self.logger
+        )
+        
+        self.reflective_constructor = ReflectiveConstructor(
+            memory_search=memory_search,
+            tool_manager=None,  # Injected later
+            logger=self.logger
+        )
+        
+        self.planning_constructor = PlanningConstructor(
+            tool_manager=None,  # Injected later
+            logger=self.logger
+        )
         
         # State tracking
         self._is_processing = False
@@ -105,23 +128,16 @@ class ThoughtProcessor:
             logger=self.logger
         )
         
-        # Inject prompt builder into thinking modes
-        self.thinking_modes.set_prompt_builder(self.prompt_builder)
-        
         # Log initialization
-        if memory_search:
-            self.logger.system("Enhanced processor: unified prompts + personality + memory")
-        else:
-            self.logger.system("Enhanced processor: unified prompts (basic mode)")
+        self.logger.system("Thought Processor initialized with modular prompt system")
     
     # ========================================================================
-    # DEPENDENCY INJECTION - REFACTORED
+    # DEPENDENCY INJECTION
     # ========================================================================
     
     def set_tool_manager(self, tool_manager):
         """
-        Inject tool manager into prompt builder
-        Uses tool_manager naming
+        Inject tool manager into all constructors
         
         Args:
             tool_manager: ToolManager instance
@@ -129,45 +145,20 @@ class ThoughtProcessor:
         self.tool_manager = tool_manager
         self.action_state_manager = tool_manager.action_state_manager
         
-        # Inject into prompt_builder
-        if hasattr(self, 'prompt_builder') and self.prompt_builder:
-            self.prompt_builder.set_tool_manager(tool_manager)
-            
-            # Also inject persistence manager
-            if hasattr(tool_manager, 'instruction_persistence_manager'):
-                self.prompt_builder.set_instruction_persistence_manager(
-                    tool_manager.instruction_persistence_manager
-                )
-                
-                self.logger.system(
-                    "[Thought Processor] [SUCCESS] Persistence manager injected into prompt builder"
-                )
-            
-            # Verification
-            setup = self.prompt_builder.validate_setup()
-            
-            # Get tool counts directly from tool manager (safer than relying on setup dict)
-            enabled_count = len(tool_manager.get_enabled_tool_names())
-            active_count = 0
-            
-            if hasattr(tool_manager, 'instruction_persistence_manager') and tool_manager.instruction_persistence_manager:
-                try:
-                    active_count = len(tool_manager.instruction_persistence_manager.get_active_tool_names())
-                except:
-                    pass
-            
-            self.logger.system(
-                f"[Thought Processor] [SUCCESS] Prompt builder configured: "
-                f"{enabled_count} tools available, "
-                f"{active_count} with active instructions"
-            )
-        else:
-            self.logger.error("[Thought Processor] [FAILED] No prompt_builder attribute!")
+        # Inject into all constructors
+        self.responsive_constructor.tool_manager = tool_manager
+        self.reflective_constructor.tool_manager = tool_manager
+        self.planning_constructor.tool_manager = tool_manager
         
         # Update thinking_modes references
-        if hasattr(self, 'thinking_modes'):
-            self.thinking_modes.tool_manager = tool_manager
-            self.thinking_modes.action_state_manager = self.action_state_manager
+        self.thinking_modes.tool_manager = tool_manager
+        self.thinking_modes.action_state_manager = self.action_state_manager
+        
+        enabled_count = len(tool_manager.get_enabled_tool_names())
+        self.logger.system(
+            f"[Thought Processor] Tool manager injected: "
+            f"{enabled_count} tools available to all constructors"
+        )
     
     def _call_ollama(self, prompt: str, model: str, system_prompt: Optional[str] = None, 
                     image_data: str = "") -> str:
@@ -212,18 +203,9 @@ class ThoughtProcessor:
         except Exception as e:
             self.logger.error(f"Ollama API error: {e}")
             return ""
-        
+    
     def _parse_thought_response(self, response: str) -> dict:
-        """
-        Parse thought response into structured components
-        Integrated parser - no external dependency
-        
-        Args:
-            response: LLM response text
-        
-        Returns:
-            Dict with 'thoughts', 'strategic_plan', 'actions'
-        """
+        """Parse thought response into structured components"""
         result = {
             'thoughts': [],
             'strategic_plan': '',
@@ -257,11 +239,9 @@ class ThoughtProcessor:
                         result['actions'] = actions
                 except json.JSONDecodeError as e:
                     self.logger.error(f"[Parse] JSON decode error: {e}")
-                    if self.controls.LOG_RESPONSE_PROCESSING:
-                        self.logger.error(f"[Parse] Problematic JSON: {action_json[:200]}")
         
         return result
-                
+    
     # ========================================================================
     # DATA INGESTION
     # ========================================================================
@@ -277,13 +257,8 @@ class ThoughtProcessor:
             self.logger.system("[Input] Empty input - checking for proactive processing")
             return
         
-        self.logger.tool(
-            f"[USER DIRECTIVE INGESTION]\n"
-            f"Raw Input: {user_input}"
-        )
-        
+        self.logger.tool(f"[USER INPUT] {user_input}")
         self.ingest_data('user_input', user_input)
-        
         self.logger.system(f"[Input] User: {user_input}")
     
     # ========================================================================
@@ -304,8 +279,6 @@ class ThoughtProcessor:
         
         if hasattr(self, '_ai_core_ref'):
             self.cognitive_loop.set_ai_core(self._ai_core_ref)
-        else:
-            self.logger.warning("[Continuous] No AI core reference - responses may not work")
         
         if hasattr(self, 'event_loop') and self.event_loop:
             asyncio.run_coroutine_threadsafe(
@@ -331,14 +304,13 @@ class ThoughtProcessor:
             self.logger.system("Continuous thinking DISABLED")
     
     # ========================================================================
-    # MAIN COGNITIVE PROCESSING
+    # MAIN COGNITIVE PROCESSING - REFACTORED
     # ========================================================================
 
     async def process_thoughts(self, context_parts: List[str] = None) -> bool:
         """
-        Main cognitive processing loop
-        Uses tool_manager for all tool operations
-        All priority_override instead of urgency_override
+        Main cognitive processing loop - REFACTORED
+        NOW PASSES TIMESTAMP TO THOUGHT BUFFER
         """
         if self._is_processing:
             return False
@@ -356,69 +328,75 @@ class ThoughtProcessor:
             if chat_engagement_needed:
                 chat_thought = self._create_chat_engagement_thought()
                 if chat_thought:
-                    # Use priority_override
                     self.thought_buffer.add_processed_thought(
                         chat_thought['content'], 
                         chat_thought['source'],
                         chat_thought.get('original_ref'), 
-                        priority_override=chat_thought.get('priority_override')
+                        priority_override=chat_thought.get('priority_override'),
+                        timestamp=chat_thought.get('timestamp', time.time())  # PASS TIMESTAMP
                     )
                     processing_occurred = True
             
             raw_events = self.thought_buffer.get_unprocessed_events()
             
             if raw_events:
-                # Reactive processing
+                # REACTIVE PROCESSING
                 self.thought_buffer.reset_consecutive_counter()
                 
-                # Get pending actions from tool system
-                pending_actions = ""
-                if hasattr(self, 'action_state_manager') and self.action_state_manager:
-                    pending_actions = self.action_state_manager.get_context_summary()
-                
                 thoughts, actions = await self._reactive_processing(
-                    raw_events, context_parts, pending_actions
+                    raw_events, context_parts
                 )
                 
                 if thoughts:
                     for thought_data in thoughts:
-                        # Use priority_override
+                        # PASS ALL METADATA INCLUDING TIMESTAMP
                         self.thought_buffer.add_processed_thought(
                             thought_data['content'], 
                             thought_data['source'],
                             thought_data.get('original_ref'),
-                            priority_override=thought_data.get('priority_override')
+                            priority_override=thought_data.get('priority_override'),
+                            timestamp=thought_data.get('timestamp', time.time())
                         )
                 
-                # Execute actions via tool manager
-                if actions and hasattr(self, 'tool_manager') and self.tool_manager:
+                # Execute actions
+                if actions and self.tool_manager:
                     await self.tool_manager.execute_structured_actions(
                         actions, self.thought_buffer
                     )
                 
                 self.thought_buffer.mark_events_processed(len(raw_events))
                 processing_occurred = True
+            
             else:
-                # Proactive processing
-                thinking_mode = self.thinking_modes.determine_thinking_mode(context_parts)
+                # PROACTIVE PROCESSING
+                time_since_last_input = self.thought_buffer.get_time_since_last_user_input()
                 
-                if thinking_mode == 'memory_reflection':
-                    result = await self.thinking_modes.memory_reflective_thinking(context_parts)
-                elif thinking_mode == 'future_planning':
-                    result = await self.thinking_modes.future_planning_thinking(context_parts)
-                else:
-                    result = await self.thinking_modes.proactive_processing(context_parts)
+                decision = self.response_decider.decide_prompt_type(
+                    has_incoming_input=False,
+                    time_since_last_input=time_since_last_input,
+                    thought_buffer=self.thought_buffer,
+                    context_parts=context_parts
+                )
                 
-                if isinstance(result, dict):
+                self.logger.system(f"[Proactive] {decision.reasoning}")
+                
+                result = await self._proactive_processing_by_type(
+                    decision.prompt_type,
+                    context_parts
+                )
+                
+                if result:
                     proactive_thought = result.get('thought')
                     proactive_actions = result.get('actions', [])
-                else:
-                    proactive_thought = result
-                    proactive_actions = []
-                
-                if proactive_thought:
-                    self.thought_buffer.add_proactive_thought(proactive_thought)
-                    processing_occurred = True
+                    
+                    if proactive_thought:
+                        self.thought_buffer.add_proactive_thought(proactive_thought)
+                        processing_occurred = True
+                    
+                    if proactive_actions and self.tool_manager:
+                        await self.tool_manager.execute_structured_actions(
+                            proactive_actions, self.thought_buffer
+                        )
             
             # Background maintenance
             await self._check_urgent_reminders()
@@ -428,8 +406,208 @@ class ThoughtProcessor:
                 self._last_memory_integration = time.time()
             
             return processing_occurred
+        
         finally:
             self._is_processing = False
+    
+    # ========================================================================
+    # REACTIVE PROCESSING - REFACTORED
+    # ========================================================================
+    
+    async def _reactive_processing(self, raw_events, context_parts):
+        """
+        Process events reactively - REFACTORED
+        NOW PRESERVES PRIORITY AND TIMESTAMP THROUGH PIPELINE
+        """
+        from BASE.core.thought_buffer import Priority
+        
+        self.logger.tool(
+            f"[REACTIVE] Processing {len(raw_events)} events:\n" + 
+            "\n".join([f"  [{i}] {e.source}: {e.data[:80]}" for i, e in enumerate(raw_events)])
+        )
+        
+        # Get context
+        recent_thoughts = self.thought_buffer.get_thoughts_for_response()[-10:]
+        last_user_msg = self.thought_buffer.get_last_user_input()
+        
+        # Get pending actions
+        pending_actions = ""
+        if self.action_state_manager:
+            pending_actions = self.action_state_manager.get_context_summary()
+        
+        # Detect special conditions
+        has_vision = any(e.source == 'vision_result' for e in raw_events)
+        
+        # Build prompt using ResponsiveConstructor
+        prompt = self.responsive_constructor.build_responsive_prompt(
+            thought_chain=recent_thoughts,
+            raw_events=raw_events,
+            context_parts=context_parts,
+            last_user_msg=last_user_msg,
+            pending_actions=pending_actions,
+            has_vision=has_vision
+        )
+        
+        # Call LLM
+        response = self._call_ollama(
+            prompt=prompt, model=self.config.thought_model, system_prompt=None
+        )
+        
+        # Parse response
+        parsed = self._parse_thought_response(response)
+        
+        self.logger.tool(
+            f"[REACTIVE RESULT] "
+            f"Thoughts: {len(parsed['thoughts'])}, "
+            f"Actions: {len(parsed['actions'])}, "
+            f"Plan: {bool(parsed['strategic_plan'])}"
+        )
+        
+        # Convert to internal format WITH PRIORITY AND TIMESTAMP PRESERVATION
+        thoughts = []
+        for i, thought_text in enumerate(parsed['thoughts']):
+            event = raw_events[i] if i < len(raw_events) else raw_events[-1]
+            
+            # Get event timestamp
+            event_timestamp = getattr(event, 'timestamp', time.time())
+            
+            # Determine priority from event source
+            priority_override = Priority.from_source(event.source)
+            
+            # Additional priority logic
+            if hasattr(event, 'source'):
+                if event.source == 'user_input':
+                    priority_override = Priority.HIGH
+                elif 'chat' in event.source.lower():
+                    priority_override = self._detect_chat_urgency(event.data)
+            
+            # Log priority assignment
+            self.logger.system(
+                f"[Priority Assignment] Event {i+1}: "
+                f"source={event.source}, priority={priority_override}"
+            )
+            
+            # Store thought data (will be formatted by add_processed_thought)
+            thoughts.append({
+                'content': str(thought_text),  # Raw content
+                'source': event.source if hasattr(event, 'source') else 'unknown',
+                'original_ref': event.data if hasattr(event, 'data') else '',
+                'priority_override': priority_override,
+                'timestamp': event_timestamp  # PRESERVE ORIGINAL TIMESTAMP
+            })
+        
+        # Add strategic plan
+        if parsed['strategic_plan']:
+            thoughts.append({
+                'content': str(parsed['strategic_plan']), 
+                'source': 'internal',
+                'original_ref': '', 
+                'priority_override': Priority.LOW,
+                'timestamp': time.time()
+            })
+        
+        # Validate actions
+        actions = self._validate_actions(parsed['actions'])
+        
+        return thoughts, actions
+    
+    # ========================================================================
+    # PROACTIVE PROCESSING - REFACTORED
+    # ========================================================================
+    
+    async def _proactive_processing_by_type(
+        self,
+        prompt_type: PromptType,
+        context_parts: List[str]
+    ) -> Optional[Dict]:
+        """
+        Generate proactive thought using appropriate constructor
+        NEW: Dispatcher based on PromptType
+        
+        Args:
+            prompt_type: Type of prompt to construct
+            context_parts: Context strings
+        
+        Returns:
+            Dict with 'thought' and optional 'actions'
+        """
+        recent_thoughts = self.thought_buffer.get_thoughts_for_response()[-5:]
+        ongoing_ctx = self.thought_buffer.get_ongoing_context()
+        
+        if prompt_type == PromptType.REFLECTIVE:
+            # Use ReflectiveConstructor
+            thought_count = len(self.thought_buffer.get_thoughts_for_response())
+            is_startup = thought_count < 3
+            
+            prompt = self.reflective_constructor.build_reflective_prompt(
+                thought_chain=recent_thoughts,
+                ongoing_context=ongoing_ctx if ongoing_ctx else "Reflecting on recent activity",
+                query=ongoing_ctx[:100] if ongoing_ctx else None,
+                is_startup=is_startup
+            )
+        
+        elif prompt_type == PromptType.PLANNING:
+            # Use PlanningConstructor
+            time_since_user = self.thought_buffer.get_time_since_last_user_input()
+            time_context = (
+                f"{username} was active {time_since_user // 60:.0f} minutes ago"
+                if time_since_user < 9999 else "No recent user input"
+            )
+            
+            prompt = self.planning_constructor.build_planning_prompt(
+                thought_chain=recent_thoughts,
+                ongoing_context=ongoing_ctx if ongoing_ctx else "Open time for planning",
+                time_context=time_context
+            )
+        
+        else:
+            # Default to planning
+            prompt = self.planning_constructor.build_planning_prompt(
+                thought_chain=recent_thoughts,
+                ongoing_context=ongoing_ctx if ongoing_ctx else "Planning next actions",
+                time_context=None
+            )
+        
+        # Call LLM
+        response = self._call_ollama(
+            prompt=prompt, model=self.config.thought_model, system_prompt=None
+        )
+        
+        # Parse response
+        return self._parse_thinking_response(response)
+    
+    def _parse_thinking_response(self, response: str) -> Optional[Dict]:
+        """Parse LLM response for thought and actions"""
+        think_match = re.search(r'<think>(.*?)</think>', response, re.DOTALL | re.IGNORECASE)
+        action_match = re.search(r'<action_list>(.*?)</action_list>', response, re.DOTALL | re.IGNORECASE)
+        
+        thought = None
+        actions = []
+        
+        if think_match:
+            thought = think_match.group(1).strip()
+            if not (10 <= len(thought) <= 300):
+                thought = None
+        
+        if action_match:
+            action_json = action_match.group(1).strip()
+            action_json = re.sub(r'```json|```', '', action_json).strip()
+            if action_json and action_json != '[]':
+                try:
+                    actions = json.loads(action_json)
+                    if not isinstance(actions, list):
+                        actions = []
+                except:
+                    actions = []
+        
+        if thought:
+            return {'thought': thought, 'actions': actions}
+        
+        return None
+    
+    # ========================================================================
+    # HELPER METHODS
+    # ========================================================================
     
     def _check_chat_engagement_need(self) -> bool:
         """Check if chat engagement needed"""
@@ -439,10 +617,7 @@ class ThoughtProcessor:
         return self.thought_buffer.should_engage_with_chat()
     
     def _create_chat_engagement_thought(self) -> Optional[Dict]:
-        """
-        Create chat engagement thought
-        Returns priority_override
-        """
+        """Create chat engagement thought"""
         from BASE.core.thought_buffer import Priority
         
         unengaged = self.thought_buffer.get_unengaged_messages(max_messages=5)
@@ -453,7 +628,6 @@ class ThoughtProcessor:
         has_mention, has_question = False, False
         
         for msg in unengaged:
-            platform = msg.get('platform', 'Chat')
             chat_username = msg.get('username', 'Someone')
             message = msg.get('message', '')
             
@@ -476,7 +650,6 @@ class ThoughtProcessor:
         summary = "\n".join(chat_summary_parts[:3])
         thought_content = f"{thought_prefix}\n{summary}"
         
-        # Return priority_override
         return {
             'content': thought_content, 
             'source': 'chat_engagement',
@@ -484,106 +657,8 @@ class ThoughtProcessor:
             'priority_override': priority
         }
     
-    # ========================================================================
-    # REACTIVE PROCESSING
-    # ========================================================================
-    
-    async def _reactive_processing(self, raw_events, context_parts, pending_actions):
-        """
-        Process events reactively using centralized prompt builder
-        All priority_override instead of urgency_override
-        """
-        from BASE.core.thought_buffer import Priority
-        
-        self.logger.tool(
-            f"[REACTIVE PROCESSING START]\n"
-            f"Event Count: {len(raw_events)}\n"
-            f"Events:\n" + 
-            "\n".join([f"  [{i}] {e.source}: {e.data}" for i, e in enumerate(raw_events)])
-        )
-        
-        recent_thoughts_list = self.thought_buffer.get_thoughts_for_response()[-10:]
-        recent_thoughts_str = [str(t) for t in recent_thoughts_list]
-        last_user_msg = self.thought_buffer.get_last_user_input()
-        
-        has_vision = any(hasattr(e, 'source') and e.source == 'vision_result' for e in raw_events)
-        has_urgent_reminders = self.thought_buffer.has_urgent_reminders
-        
-        # Build prompt using ThoughtPromptBuilder
-        prompt = self.prompt_builder.build_reactive_thinking_prompt(
-            raw_events=raw_events,
-            recent_thoughts=recent_thoughts_str,
-            context_parts=context_parts,
-            last_user_msg=last_user_msg,
-            pending_actions=pending_actions,
-            has_vision=has_vision,
-            has_urgent_reminders=has_urgent_reminders,
-        )
-        
-        response = self._call_ollama(
-            prompt=prompt, model=self.config.thought_model, system_prompt=None
-        )
-        
-        # Parse response
-        parsed = self._parse_thought_response(response)
-        
-        self.logger.tool(
-            f"[REACTIVE PROCESSING RESULT]\n"
-            f"Thoughts: {len(parsed['thoughts'])}\n"
-            f"Actions: {len(parsed['actions'])}\n"
-            f"Plan: {bool(parsed['strategic_plan'])}"
-        )
-        
-        # Convert to internal format
-        thoughts = []
-        for i, thought_text in enumerate(parsed['thoughts']):
-            event = raw_events[i] if i < len(raw_events) else raw_events[-1]
-            
-            if not isinstance(thought_text, str):
-                thought_text = str(thought_text)
-            
-            priority_override = None
-            if hasattr(event, 'source'):
-                if event.source == 'user_input':
-                    priority_override = Priority.HIGH
-                elif 'chat' in event.source.lower() and hasattr(event, 'data'):
-                    priority_override = self._detect_chat_urgency(event.data)
-            
-            # Use priority_override
-            thoughts.append({
-                'content': thought_text,
-                'source': event.source if hasattr(event, 'source') else 'unknown',
-                'original_ref': event.data if hasattr(event, 'data') else '',
-                'priority_override': priority_override
-            })
-        
-        # Add strategic plan
-        if parsed['strategic_plan']:
-            plan_text = str(parsed['strategic_plan'])
-            # Use priority_override
-            thoughts.append({
-                'content': plan_text, 
-                'source': 'internal',
-                'original_ref': '', 
-                'priority_override': None
-            })
-            
-            self.logger.thinking(f"[Plan] {plan_text}")
-        
-        # Validate actions
-        actions = self._validate_actions(parsed['actions'])
-        
-        if actions:
-            tool_names = [a['tool'] for a in actions]
-            self.logger.tool(f"[Actions Validated] {tool_names}")
-        
-        return thoughts, actions
-    
     def _detect_chat_urgency(self, chat_message: str) -> str:
-        """
-        Detect priority for chat messages
-        Returns: Priority level (Low/Medium/High/Critical)
-        """
+        """Detect priority for chat messages"""
         from BASE.core.thought_buffer import Priority
         from personality.bot_info import agentname
         
@@ -599,18 +674,11 @@ class ThoughtProcessor:
         return Priority.LOW
     
     def _validate_actions(self, actions: List[Dict]) -> List[Dict]:
-        """
-        Validate actions against available tools
-        """
-        if not actions:
+        """Validate actions against available tools"""
+        if not actions or not self.tool_manager:
             return []
         
         valid_actions = []
-        
-        # Get enabled tools from tool manager
-        if not hasattr(self, 'tool_manager') or not self.tool_manager:
-            return []
-        
         enabled_tools = self.tool_manager.get_enabled_tool_names()
         
         for action in actions:
@@ -620,49 +688,33 @@ class ThoughtProcessor:
             tool_name = action['tool']
             tool_category = tool_name.split('.')[0] if '.' in tool_name else tool_name
             
-            # [CRITICAL] "instructions" is always valid
+            # "instructions" is always valid
             if tool_category == 'instructions':
                 valid_actions.append(action)
-                self.logger.system(
-                    f"[Action Validation] [SUCCESS] Instruction retrieval request: {action}"
-                )
                 continue
             
             # Check if tool is enabled
             if tool_category in enabled_tools:
                 valid_actions.append(action)
-                self.logger.system(
-                    f"[Action Validation] [SUCCESS] Tool action validated: {action}"
-                )
             else:
                 self.logger.warning(
-                    f"[Action Validation] [FAILED] Rejected (tool not enabled): {action}\n"
-                    f"  Available tools: {enabled_tools}"
+                    f"[Action Validation] Rejected (tool not enabled): {tool_name}"
                 )
-        
-        if valid_actions:
-            self.logger.system(
-                f"[Action Validation] Validated {len(valid_actions)} of {len(actions)} actions"
-            )
         
         return valid_actions
     
-    # ========================================================================
-    # BACKGROUND MAINTENANCE
-    # ========================================================================
-    
     async def _check_urgent_reminders(self):
-        # Reminders handled by modular tool system
+        """Background reminder check (handled by tool system)"""
         pass
     
     # ========================================================================
-    # STATE PERSISTENCE
+    # STATE ACCESS
     # ========================================================================
     
     def get_performance_stats(self) -> Dict:
         """Get processing statistics"""
         pending_count = 0
-        if hasattr(self, 'action_state_manager') and self.action_state_manager:
+        if self.action_state_manager:
             pending_count = len(self.action_state_manager.get_pending_actions())
         
         return {
@@ -673,5 +725,6 @@ class ThoughtProcessor:
             'pending_actions': pending_count,
             'has_memory_search': self.memory_search is not None,
             'last_memory_integration': self._last_memory_integration,
-            'cognitive_loop_active': self.cognitive_loop is not None
+            'cognitive_loop_active': self.cognitive_loop is not None,
+            'prompt_system': 'modular'  # Flag for new system
         }

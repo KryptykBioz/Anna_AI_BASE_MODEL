@@ -2,7 +2,7 @@
 """
 Enhanced Thinking Model Module - Cleaned
 All game references removed - games are now tools
-Uses modular prompt construction from SYS_MSG.py
+Uses modular prompt construction from personality_prompt_parts.py
 """
 import time
 import re
@@ -15,11 +15,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from personality.bot_info import agentname
-from personality.SYS_MSG import (
-    CORE_IDENTITY,
-    CORE_RULES,
-    COMMUNICATION_STYLE,
-)
+from personality.prompts.personality_prompt_parts import PersonalityPromptParts
 
 THINK_PATTERN = re.compile(r'<think>(.*?)</think>', re.DOTALL)
 
@@ -132,24 +128,26 @@ class ThinkingModelProcessor:
         # Build context hint based on experience type
         context_hint = self._get_context_hint(experience_type, thought_buffer)
         
+        # Get unified personality
+        personality = PersonalityPromptParts.get_unified_personality()
+        
         # Build personality-aware prompt using modular components
-        prompt = f"""{CORE_IDENTITY}
+        prompt = f"""{personality}
 
-{CORE_RULES}
-
-{COMMUNICATION_STYLE}
-
-Your recent thoughts:
+## Your Recent Thoughts
 {thoughts_text}
 
-NEW EXPERIENCE: {experience_type}
+## New Experience: {experience_type}
 {experience_data}
 
 {context_hint}
 
-Write {agentname}'s brief internal reaction to this (1-2 sentences max, stay in character).
+Write {agentname}'s brief internal reaction to this incoming data or experience. 
+Keep your reaction to 1-2 sentences max, and stay in character.
 This is your INTERNAL thought, not a response to others. Think from {agentname}'s perspective.
-Stay conversational and casual, not formal or scholarly.
+Stay conversational and casual, not formal or scholarly. This internal thought will be used to inform your response, 
+not shared directly with the user or others, so do not respond directly to them in this thought.
+
 
 Your thought:"""
         
@@ -196,27 +194,24 @@ Your thought:"""
         
         thoughts_txt = "\n".join([f"- {t['content']}" for t in sel])
         
-        # Build base prompt from modular components
-        base_prompt = f"""{CORE_IDENTITY}
-
-{CORE_RULES}
-
-{COMMUNICATION_STYLE}"""
+        # Get unified personality
+        personality = PersonalityPromptParts.get_unified_personality()
         
         # Add urgency context
         urgency_txt = self._get_urgency_context(urgency_reason)
         
         # Construct full prompt
-        prompt = f"""{base_prompt}
+        prompt = f"""{personality}
 
-Your stream of consciousness:
+## Your Stream of Consciousness
 {thoughts_txt}
 
-SITUATION: {urgency_txt}
+## Situation
+{urgency_txt}
 
 Respond naturally based on your accumulated thoughts.
 
-CONSTRAINTS:
+## Constraints
 - {max_len} maximum (under 700 characters)
 - First person ("I", "me", "my")
 - Address user as {username}

@@ -63,7 +63,7 @@ class MessageProcessor:
                 if response and response.strip():
                     # Bot response already saved by AI Core
                     # Just display it (3-tuple format)
-                    self.message_queue.put(("bot", self.agentname, response))
+                    self.message_queue.put(("agent", self.agentname, response))
                     
                     # Handle TTS if enabled
                     import personality.controls as controls
